@@ -8,6 +8,7 @@
 index.html            页面
 css/style.css         样式
 js/game.js            游戏逻辑（字库、棋盘、道具、读音判断）
+js/hints.js           提示卡数据：常用 300 字的拼音和常用组词（由 tools/build_hints.py 生成）
 images/maps/          三张地图背景：map-short / map-mid / map-long
 images/props/         道具卡片（coach、mush、dragon）和角标（unicorn、door-open、door-closed），以及城堡、森林小图
 tools/gen_art.py      用画图 API 生成上面这些图片的脚本
@@ -30,3 +31,11 @@ API key 也可以写在项目根目录的 `.env` 文件里（一行 `KIE_API_KEY
 也可以只画一部分，例如 `tools/gen_art.py maps short`、`tools/gen_art.py props dragon`。API 返回的原图缓存在 `art-src/raw/`，重复运行不会再花钱；加 `--force` 才会重画。
 
 如果改了 `js/game.js` 里的道路参数（`MW`、`R`、`SP` 等或 `MAPS`），要同步改 `tools/gen_art.py` 顶部的同名常量，再重画地图。
+
+## 提示卡
+
+设置页的「提示卡」默认打开：每位玩家每局有 3 次提示，读字时点「💡 提示」，卡片翻过来显示拼音和一个常用组词。
+常用 300 字的数据在 `tools/build_hints.py` 里，改完运行 `.venv/bin/python tools/build_hints.py` 重新生成 `js/hints.js`。
+自己上传的字库里如果有不在这 300 个字里的字，提示卡会临时加载 pinyin-pro，只显示拼音。
+
+更新 css/js 文件后，把 `index.html` 里的 `?v=` 数字加一，手机和电脑上就不会用到旧的缓存文件。

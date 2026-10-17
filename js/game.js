@@ -165,11 +165,12 @@ const DEFAULT_COUNTS = {
 const defaultCounts = len => ({...(DEFAULT_COUNTS[len] || DEFAULT_COUNTS[28])});
 function defaultSettings(){
   const s = { players:[{name:'玩家1', avatar:'👸'}, {name:'玩家2', avatar:'🐰'}], lib:'c300', mine:{chars:[], hard:[], name:''}, len:28,
-    counts:defaultCounts(28), mute:false, board:null, ver:SETTINGS_VER };
+    counts:defaultCounts(28), hints:true, mute:false, board:null, ver:SETTINGS_VER };
   return s;
 }
 let S = load(KEY_S);
 if (!S || !Array.isArray(S.players) || !S.players.length || !S.counts || !S.mine) S = defaultSettings();
+if (S.hints === undefined) S.hints = true;
 if (S.ver !== SETTINGS_VER){ S.counts = defaultCounts(S.len); S.ver = SETTINGS_VER; S.board = null; }
 if (!S.board || !Array.isArray(S.board.cells)) { drawBoard(); }
 let G = load(KEY_G);
@@ -253,8 +254,10 @@ async function card(o){
     ov.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${who}
       ${o.img ? art(o.img, 'cardpic') : o.emo ? `<div class="big-emo">${o.emo}</div>` : ''}
       ${o.title ? `<h3>${esc(o.title)}</h3>` : ''}
-      ${o.zi ? `<div class="tzg"><span>${esc(o.zi)}</span></div>` : ''}
+      ${o.zi && o.hintP ? `<div class="flip" data-flip="1"><div class="flip-in"><div class="tzg face"><span>${esc(o.zi)}</span></div><div class="face back"></div></div></div>`
+        : o.zi ? `<div class="tzg"><span>${esc(o.zi)}</span></div>` : ''}
       ${o.text ? `<p>${esc(o.text)}</p>` : ''}
+      ${o.hintP ? `<button type="button" class="btn soft hintbtn" data-hint="1" ${o.hintP.hints > 0 ? '' : 'disabled'}>${hintLabel(o.hintP)}</button>` : ''}
       <div class="row">${o.btns.map(([k, l, c]) => `<button type="button" class="btn ${c || ''}" data-k="${k}">${l}</button>`).join('')}</div>
       ${o.speak && canSpeak ? '<button type="button" class="link" data-say="1">🔊 听读音</button>' : ''}</div>`;
     const shownAt = performance.now();
@@ -266,6 +269,7 @@ async function card(o){
         const x = e.clientX, y = e.clientY;
         b = [...ov.querySelectorAll('button')].find(bt => { const r = bt.getBoundingClientRect(); return x >= r.left - 6 && x <= r.right + 6 && y >= r.top - 6 && y <= r.bottom + 6; }) || null;
       }
+      if (o.hintP && e.type === 'click' && (b ? b.dataset.hint : e.target.closest && e.target.closest('[data-flip]'))){ useHint(ov, o, !!(b && b.dataset.hint)); return; }
       if (!b || b.disabled) return;
       if (b.dataset.say){ if (e.type === 'click') say(o.zi); return; }
       if (!b.dataset.k || performance.now() - shownAt < 250) return;
@@ -278,6 +282,40 @@ async function card(o){
     const first = ov.querySelector('[data-k]'); if (first) first.focus({preventScroll:true});
     if (o.autoSay) setTimeout(() => say(o.zi), 300);
   });
+}
+/* ---------- hint cards: flip a character to see its pinyin and a common word ---------- */
+const HINT_COUNT = 3;
+const hintLabel = p => p.hints > 0 ? `💡 提示（还剩 ${p.hints} 次）` : '💡 提示用完了';
+function loadPinyin(){
+  return new Promise((res, rej) => {
+    if (window.pinyinPro) return res(window.pinyinPro);
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/pinyin-pro@3.26.0/dist/index.js';
+    s.onload = () => window.pinyinPro ? res(window.pinyinPro) : rej(new Error('no pinyinPro'));
+    s.onerror = () => rej(new Error('load failed'));
+    document.head.appendChild(s);
+  });
+}
+async function hintData(ch){
+  if (typeof HINTS !== 'undefined' && HINTS[ch]){ const [py, w, wpy] = HINTS[ch]; return { py, w, wpy }; }
+  try { return { py: (await loadPinyin()).pinyin(ch) }; } catch (e) { return { py: '' }; }
+}
+// First tap spends one of the player's free hints and flips the card; after that the card flips back and forth for free.
+async function useHint(ov, o, fromBtn){
+  const flip = ov.querySelector('.flip'), btn = ov.querySelector('.hintbtn'), p = o.hintP;
+  if (!flip || !btn) return;
+  if (flip.dataset.shown){
+    const on = flip.classList.toggle('on');
+    btn.textContent = on ? '🔄 翻回汉字' : '💡 再看一下提示'; return;
+  }
+  if (!fromBtn || p.hints <= 0 || flip.dataset.loading) return;
+  flip.dataset.loading = '1'; p.hints--; saveG(); renderStatus(); sfx('magic');
+  const d = await hintData(o.zi);
+  const word = d.w ? esc(d.w).split(esc(o.zi)).join(`<b>${esc(o.zi)}</b>`) : '';
+  flip.querySelector('.back').innerHTML = `<div class="py">${esc(d.py || '？')}</div>`
+    + (d.w ? `<div class="ci">${word}</div><div class="cipy">${esc(d.wpy)}</div>` : `<div class="cipy">${d.py ? '这个字还没有收录组词' : '拼音加载不出来，请检查网络'}</div>`);
+  flip.dataset.shown = '1'; delete flip.dataset.loading;
+  flip.classList.add('on'); btn.disabled = false; btn.textContent = '🔄 翻回汉字';
 }
 async function toast(text, ms = 950){
   const t = document.createElement('div'); t.className = 'toast'; t.textContent = text;
@@ -348,6 +386,10 @@ function renderSetup(){
       <div class="row"><button type="button" class="btn soft" data-act="redraw">🎲 重新抽字</button><button type="button" class="btn soft" data-act="rearrange">🔀 道具换位置</button></div>`
       : `<p class="err">字库里至少要有 8 个字才能摆棋盘。</p>`}
     </section>
+    <section class="panel"><h2>提示卡</h2>
+      <div class="lbl-row"><span>💡 每人 ${HINT_COUNT} 次提示</span><button type="button" class="switch ${S.hints ? 'on' : ''}" data-act="hints" role="switch" aria-checked="${S.hints}" aria-label="提示卡开关"><i></i></button></div>
+      <p class="note">${S.hints ? '遇到不认识的字，可以用一次提示把卡片翻过来，看拼音和一个常用的词。中文好的小朋友可以关掉。' : '提示卡关掉了，读字时没有提示。'}</p>
+    </section>
     <button type="button" class="btn primary wide go" data-act="start" ${b ? '' : 'disabled'}>开始游戏！</button>
     <section class="panel"><h2>怎么玩</h2>
       <ul class="rules">
@@ -358,6 +400,7 @@ function renderSetup(){
         <li><span>${art('coach','ico')}</span><span>南瓜马车：直接再往前走两格。</span></li>
         <li><span>${art('unicorn','ico')}</span><span>独角兽：读对这个字，往前飞三格。</span></li>
         <li><span>${art('portal','ico')}</span><span>魔法门：读对开着的门上的字，再读对同号关着的门上的字，就能穿过去。</span></li>
+        ${S.hints ? `<li><span>💡</span><span>提示卡：每人有 ${HINT_COUNT} 次提示，不认识的字可以翻开卡片看拼音和组词。</span></li>` : ''}
       </ul>
     </section>`;
 }
@@ -499,7 +542,7 @@ function renderGame(){
 function renderStatus(){
   const who = document.getElementById('gwho'); if (!who) return;
   const p = G.players[G.turn], last = lastIdx();
-  who.innerHTML = `<div class="av" style="--pc:${p.color}">${p.avatar}</div><div><div class="nm">轮到 ${esc(p.name)}</div><div class="sub">${esc(G.msg || '点「掷骰子」往前走')}</div></div>`;
+  who.innerHTML = `<div class="av" style="--pc:${p.color}">${p.avatar}</div><div><div class="nm">轮到 ${esc(p.name)}${G.hintsOn ? `<span class="hl">💡${p.hints}</span>` : ''}</div><div class="sub">${esc(G.msg || '点「掷骰子」往前走')}</div></div>`;
   document.getElementById('rail').innerHTML = G.players.map((q, i) => `<span class="dot ${i === G.turn ? 'now' : ''}" style="--pc:${q.color};left:${(Math.min(q.pos, last) / last * 100).toFixed(1)}%" title="${esc(q.name)}">${q.skip ? '😴' : q.avatar}</span>`).join('');
   const rb = document.getElementById('rollbtn'); if (rb) rb.disabled = busy || G.winner != null;
   placeTokens();
@@ -603,7 +646,7 @@ async function resolve(pi){
 }
 
 function readCard(p, ch, hint){
-  return card({who:p, zi:ch, text:hint, speak:true, btns:[['no','❌ 没读出来','bad'],['yes','✅ 读对了','good']]}).then(k => k === 'yes');
+  return card({who:p, zi:ch, text:hint, speak:true, hintP: G.hintsOn ? p : null, btns:[['no','❌ 没读出来','bad'],['yes','✅ 读对了','good']]}).then(k => k === 'yes');
 }
 async function readFlow(pi, cell){
   const p = G.players[pi], last = lastIdx();
@@ -663,8 +706,8 @@ async function win(pi){
 }
 
 function newGame(players, board){
-  G = { players: players.map((p, i) => ({name: (p.name || '').trim() || `玩家${i + 1}`, avatar: p.avatar, color: COLORS[i], pos:0, prev:0, skip:false})),
-        board: JSON.parse(JSON.stringify(board)), turn:0, winner:null, active:true, lastRoll:1, msg:'' };
+  G = { players: players.map((p, i) => ({name: (p.name || '').trim() || `玩家${i + 1}`, avatar: p.avatar, color: COLORS[i], pos:0, prev:0, skip:false, hints: S.hints ? HINT_COUNT : 0})),
+        board: JSON.parse(JSON.stringify(board)), hintsOn: !!S.hints, turn:0, winner:null, active:true, lastRoll:1, msg:'' };
   busy = false; saveG(); screen = 'game'; render();
   try { if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {}); } catch (e) {}
 }
@@ -696,6 +739,7 @@ document.addEventListener('click', e => {
       S.lib = v; ui.pasting = v === 'mine' && !(S.mine.chars || []).length ? false : ui.pasting;
       drawBoard(); break;
     }
+    case 'hints': S.hints = !S.hints; break;
     case 'len': S.len = +b.dataset.v; S.counts = defaultCounts(S.len); drawBoard(); break;
     case 'paste': ui.pasting = !ui.pasting; ui.libErr = ''; ui.libMsg = ''; break;
     case 'pastecancel': ui.pasting = false; break;
