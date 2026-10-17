@@ -23,7 +23,7 @@ API key 从环境变量或项目根目录的 .env 文件读取，脚本不会打
   API 返回的原图缓存在 art-src/raw/，再次运行不会重复花钱；加 --force 才会重新画。
 """
 import base64, io, json, math, os, sys, time, uuid, urllib.request, urllib.error
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW = os.path.join(ROOT, 'art-src', 'raw')
@@ -337,9 +337,9 @@ def paint_road(canvas, g):
             layer = layer.filter(ImageFilter.GaussianBlur(blur))
         canvas.alpha_composite(Image.merge('RGBA', (*Image.new('RGB', (W, Hpx), color).split(), layer)))
     for pts, w in ((g['road'], 72), (g['conn'], 50)):
-        stroke(pts, w + 8, (176, 146, 104), 6)     # 柔和的深色路边
-        stroke(pts, w, (236, 214, 176), 3)          # 沙土路面
-        stroke(pts, w - 22, (245, 230, 200), 10)    # 中间亮一点
+        stroke(pts, w + 10, (170, 150, 104), 12)   # 很淡、很软的路边，像融进草地
+        stroke(pts, w, (236, 214, 176), 5)          # 沙土路面
+        stroke(pts, w - 22, (245, 230, 200), 12)    # 中间亮一点
     # 路面上的小石子和纹理（只在路上）
     mask = Image.new('L', (W, Hpx), 0); md = ImageDraw.Draw(mask)
     md.line([P(p) for p in g['road']], fill=255, width=round(60 * S), joint='curve')
@@ -350,6 +350,70 @@ def paint_road(canvas, g):
         td.ellipse([x - r, y - r * .7, x + r, y + r * .7], fill=c)
     tex.putalpha(Image.composite(tex.getchannel('A'), Image.new('L', (W, Hpx), 0), mask))
     canvas.alpha_composite(tex)
+    return canvas
+
+
+EXTRA_SEAMS = {'mid': [1720]}   # 段内 AI 自己画出的横线（像素行），和自动算出的拼接处一起修
+EXTRA_FILL = {'mid': [1430]}    # 画得太空的草地（像素行），请 AI 补上花草小动物
+TOUCH_PROMPT = {
+    'seam': ('This is one section of a storybook map. Across the middle of the image there is a visible horizontal seam where two '
+             'paintings were joined. Repaint the scenery so it flows continuously across that line with no visible seam, '
+             'keeping everything else the same. '),
+    'fill': ('The plain flat green lawn in the middle of this image is too empty. Paint it as a lush storybook meadow with '
+             'wildflowers, small bushes, mushrooms and one or two cute woodland animals, matching the rest of the picture. '),
+    'top': ('Make the winding sandy path continue naturally from where it ends up to the castle front gate, as a slightly '
+            'narrower garden path that clearly reaches the gate. The castle must stay fully visible and unchanged, with nothing '
+            'covering it. Blend the edges of the sandy path softly into the grass and flowers, as part of the painting. '),
+    'bottom': ('Make the start of the sandy path look natural: the path should emerge from among the forest trees at the bottom, '
+               'its beginning fading softly into the forest floor instead of ending abruptly. Blend the edges of the sandy path '
+               'softly into the grass, as part of the painting. '),
+}
+TOUCH_TAIL = ('Keep the sandy path in exactly the same position, shape and width, and keep it empty. Same style: ' + STYLE)
+
+
+def touch_up(canvas, name, g, f, prov, force):
+    """拼好的地图再请 AI 局部重画几处：拼接缝、起点、终点。贴回时把放格子的那段路保护起来，格子位置不会变。"""
+    Hpx = canvas.height
+    tops = []; t = Hpx - WIN_H
+    while t > 0:
+        tops.append(t); t -= STEP
+    tops.append(0)
+    rows = sorted([b + STEP for b in tops[1:]] + EXTRA_SEAMS.get(name, []))  # 每段新画的部分和旧段的接缝
+    seams = []
+    for r in rows:  # 太近的缝合并成一处
+        if seams and r - seams[-1] < 300:
+            continue
+        seams.append(r)
+    start_y = round(g['road'][0][1] * S); end_y = round(g['road'][-1][1] * S)
+    jobs = [('seam', r, max(0, min(Hpx - WIN_H, r - WIN_H // 2)), r - 220, r + 220) for r in seams]
+    jobs += [('fill', r, max(0, min(Hpx - WIN_H, r - WIN_H // 2)), r - 160, r + 160) for r in EXTRA_FILL.get(name, [])]
+    jobs.append(('bottom', start_y, Hpx - WIN_H, start_y - round(60 * S), Hpx))
+    jobs.append(('top', end_y, 0, 0, end_y + round(50 * S)))
+    # 受保护的路：从第一个格子到最后一个格子，平头，不含两头的圆帽
+    guard = Image.new('L', (W, Hpx), 0)
+    ImageDraw.Draw(guard).line([P(p) for p in g['road']], fill=255, width=round(74 * S))
+    guard = guard.filter(ImageFilter.GaussianBlur(3))
+    for kind, row, top, y0, y1 in jobs:
+        key = f'touch-{name}-{kind}-{row}'
+        cache = os.path.join(RAW, key + '.png')
+        win = canvas.crop((0, top, W, top + WIN_H))
+        if os.path.exists(cache) and not force:
+            new = Image.open(cache).convert('RGBA')
+        else:
+            print(f'  修 {name} {kind}（第 {row} 行）…')
+            prompt = TOUCH_PROMPT[kind] + TOUCH_TAIL
+            if prov == 'kie':
+                new = kie_image(prompt, '2:3', images=[win], label=key)
+            elif prov == 'openai':
+                new = openai_image(prompt, f'{W}x{WIN_H}', images=[win], label=key)
+            else:
+                new = gemini_image(prompt, '2:3', images=[win], label=key)
+            new = new.convert('RGBA').resize((W, WIN_H), Image.LANCZOS); new.save(cache)
+        m = Image.new('L', (W, WIN_H), 0)
+        ImageDraw.Draw(m).rectangle([0, max(0, y0 - top), W, min(WIN_H, y1 - top)], fill=255)
+        m = m.filter(ImageFilter.GaussianBlur(40))
+        m = ImageChops.subtract(m, guard.crop((0, top, W, top + WIN_H)))
+        canvas.paste(Image.composite(new, win, m), (0, top))
     return canvas
 
 
@@ -402,6 +466,7 @@ def gen_map(name, force):
         canvas.crop((0, Hpx - round(130 * S), round(170 * S), Hpx)).convert('RGB').save(
             os.path.join(OUT_PROPS, 'forest.webp'), 'WEBP', quality=86)
     canvas = paint_road(canvas, g)
+    canvas = touch_up(canvas, name, g, f, prov, force)
     os.makedirs(OUT_MAPS, exist_ok=True)
     canvas.convert('RGB').save(out, 'WEBP', quality=80, method=6)
     print(f'完成 {out}（{W}x{Hpx}）')
