@@ -703,9 +703,10 @@ async function win(pi){
   p.pos = lastIdx();
   G.winner = pi; G.active = false; G.msg = `${p.name} 到达城堡！`;
   saveG(); renderStatus(); scrollToCell(p.pos, true, true); sfx('win'); confetti();
-  const k = await card({who:p, img:'castle', title:`${p.name} 到达城堡啦！`, text:'第一个走到城堡，太厉害了！', btns:[['setup','回到设置'],['again','再来一局','primary']]});
+  const k = await card({who:p, img:'castle', title:`${p.name} 到达城堡啦！`, text:'第一个走到城堡，太厉害了！', btns:[['setup','⚙️ 修改设置'],['again','🎲 再玩一局','primary']]});
   busy = false;
-  if (k === 'again') newGame(G.players.map(q => ({name:q.name, avatar:q.avatar})), G.board);
+  drawBoard(); saveS();  // every new game gets fresh characters and freshly placed props, unicorns and doors
+  if (k === 'again' && S.board) newGame(S.players, S.board);
   else { screen = 'setup'; render(); window.scrollTo(0, 0); }
 }
 
