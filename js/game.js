@@ -162,15 +162,18 @@ const DEFAULT_COUNTS = {
   28: {dragon:1, coach:2, mush:1, bridge:1, uni:1},
   36: {dragon:1, coach:2, mush:2, bridge:1, uni:1}
 }, SETTINGS_VER = 4;
+// Hints per player per game: 3, 6 or unlimited ('inf'); in a game an unlimited player has hints = -1.
+const HINT_CHOICES = [3, 6, 'inf'];
 const defaultCounts = len => ({...(DEFAULT_COUNTS[len] || DEFAULT_COUNTS[28])});
 function defaultSettings(){
   const s = { players:[{name:'玩家1', avatar:'👸'}, {name:'玩家2', avatar:'🐰'}], lib:'c300', mine:{chars:[], hard:[], name:''}, len:28,
-    counts:defaultCounts(28), hints:true, mute:false, board:null, ver:SETTINGS_VER };
+    counts:defaultCounts(28), hints:true, hintN:3, mute:false, board:null, ver:SETTINGS_VER };
   return s;
 }
 let S = load(KEY_S);
 if (!S || !Array.isArray(S.players) || !S.players.length || !S.counts || !S.mine) S = defaultSettings();
 if (S.hints === undefined) S.hints = true;
+if (!HINT_CHOICES.includes(S.hintN)) S.hintN = 3;
 if (S.ver !== SETTINGS_VER){ S.counts = defaultCounts(S.len); S.ver = SETTINGS_VER; S.board = null; }
 if (!S.board || !Array.isArray(S.board.cells)) { drawBoard(); }
 let G = load(KEY_G);
@@ -257,7 +260,7 @@ async function card(o){
       ${o.zi && o.hintP ? `<div class="flip" data-flip="1"><div class="flip-in"><div class="tzg face"><span>${esc(o.zi)}</span></div><div class="face back"></div></div></div>`
         : o.zi ? `<div class="tzg"><span>${esc(o.zi)}</span></div>` : ''}
       ${o.text ? `<p>${esc(o.text)}</p>` : ''}
-      ${o.hintP ? `<button type="button" class="btn soft hintbtn" data-hint="1" ${o.hintP.hints > 0 ? '' : 'disabled'}>${hintLabel(o.hintP)}</button>` : ''}
+      ${o.hintP ? `<button type="button" class="btn soft hintbtn" data-hint="1" ${o.hintP.hints !== 0 ? '' : 'disabled'}>${hintLabel(o.hintP)}</button>` : ''}
       <div class="row">${o.btns.map(([k, l, c]) => `<button type="button" class="btn ${c || ''}" data-k="${k}">${l}</button>`).join('')}</div>
       ${o.speak && canSpeak ? '<button type="button" class="link" data-say="1">🔊 听读音</button>' : ''}</div>`;
     const shownAt = performance.now();
@@ -284,8 +287,8 @@ async function card(o){
   });
 }
 /* ---------- hint cards: flip a character to see its pinyin and a common word ---------- */
-const HINT_COUNT = 3;
-const hintLabel = p => p.hints > 0 ? `💡 提示（还剩 ${p.hints} 次）` : '💡 提示用完了';
+const hintLabel = p => p.hints < 0 ? '💡 提示' : p.hints > 0 ? `💡 提示（还剩 ${p.hints} 次）` : '💡 提示用完了';
+const hintDesc = n => n === 'inf' ? '每人可以无限次使用提示' : `每人有 ${n} 次提示`;
 function loadPinyin(){
   return new Promise((res, rej) => {
     if (window.pinyinPro) return res(window.pinyinPro);
@@ -308,8 +311,8 @@ async function useHint(ov, o, fromBtn){
     const on = flip.classList.toggle('on');
     btn.textContent = on ? '🔄 翻回汉字' : '💡 再看一下提示'; return;
   }
-  if (!fromBtn || p.hints <= 0 || flip.dataset.loading) return;
-  flip.dataset.loading = '1'; p.hints--; saveG(); renderStatus(); sfx('magic');
+  if (!fromBtn || p.hints === 0 || flip.dataset.loading) return;
+  flip.dataset.loading = '1'; if (p.hints > 0) p.hints--; saveG(); renderStatus(); sfx('magic');
   const d = await hintData(o.zi);
   const word = d.w ? esc(d.w).split(esc(o.zi)).join(`<b>${esc(o.zi)}</b>`) : '';
   flip.querySelector('.back').innerHTML = `<div class="py">${esc(d.py || '？')}</div>`
@@ -387,7 +390,8 @@ function renderSetup(){
       : `<p class="err">字库里至少要有 8 个字才能摆棋盘。</p>`}
     </section>
     <section class="panel"><h2>提示卡</h2>
-      <div class="lbl-row"><span>💡 每人 ${HINT_COUNT} 次提示</span><button type="button" class="switch ${S.hints ? 'on' : ''}" data-act="hints" role="switch" aria-checked="${S.hints}" aria-label="提示卡开关"><i></i></button></div>
+      <div class="lbl-row"><span>💡 用提示卡</span><button type="button" class="switch ${S.hints ? 'on' : ''}" data-act="hints" role="switch" aria-checked="${S.hints}" aria-label="提示卡开关"><i></i></button></div>
+      ${S.hints ? `<div class="lbl-row"><span>每人可以用</span><div class="seg">${HINT_CHOICES.map(n => `<button type="button" data-act="hintn" data-v="${n}" class="${S.hintN === n ? 'on' : ''}">${n === 'inf' ? '无限' : n + ' 次'}</button>`).join('')}</div></div>` : ''}
       <p class="note">${S.hints ? '遇到不认识的字，可以用一次提示把卡片翻过来，看拼音和一个常用的词。中文好的小朋友可以关掉。' : '提示卡关掉了，读字时没有提示。'}</p>
     </section>
     <button type="button" class="btn primary wide go" data-act="start" ${b ? '' : 'disabled'}>开始游戏！</button>
@@ -400,7 +404,7 @@ function renderSetup(){
         <li><span>${art('coach','ico')}</span><span>南瓜马车：直接再往前走两格。</span></li>
         <li><span>${art('unicorn','ico')}</span><span>独角兽：读对这个字，往前飞三格。</span></li>
         <li><span>${art('portal','ico')}</span><span>魔法门：读对开着的门上的字，再读对同号关着的门上的字，就能穿过去。</span></li>
-        ${S.hints ? `<li><span>💡</span><span>提示卡：每人有 ${HINT_COUNT} 次提示，不认识的字可以翻开卡片看拼音和组词。</span></li>` : ''}
+        ${S.hints ? `<li><span>💡</span><span>提示卡：${hintDesc(S.hintN)}，不认识的字可以翻开卡片看拼音和组词。</span></li>` : ''}
       </ul>
     </section>`;
 }
@@ -542,7 +546,7 @@ function renderGame(){
 function renderStatus(){
   const who = document.getElementById('gwho'); if (!who) return;
   const p = G.players[G.turn], last = lastIdx();
-  who.innerHTML = `<div class="av" style="--pc:${p.color}">${p.avatar}</div><div><div class="nm">轮到 ${esc(p.name)}${G.hintsOn ? `<span class="hl">💡${p.hints}</span>` : ''}</div><div class="sub">${esc(G.msg || '点「掷骰子」往前走')}</div></div>`;
+  who.innerHTML = `<div class="av" style="--pc:${p.color}">${p.avatar}</div><div><div class="nm">轮到 ${esc(p.name)}${G.hintsOn ? `<span class="hl">💡${p.hints < 0 ? '∞' : p.hints}</span>` : ''}</div><div class="sub">${esc(G.msg || '点「掷骰子」往前走')}</div></div>`;
   document.getElementById('rail').innerHTML = G.players.map((q, i) => `<span class="dot ${i === G.turn ? 'now' : ''}" style="--pc:${q.color};left:${(Math.min(q.pos, last) / last * 100).toFixed(1)}%" title="${esc(q.name)}">${q.skip ? '😴' : q.avatar}</span>`).join('');
   const rb = document.getElementById('rollbtn'); if (rb) rb.disabled = busy || G.winner != null;
   placeTokens();
@@ -706,7 +710,7 @@ async function win(pi){
 }
 
 function newGame(players, board){
-  G = { players: players.map((p, i) => ({name: (p.name || '').trim() || `玩家${i + 1}`, avatar: p.avatar, color: COLORS[i], pos:0, prev:0, skip:false, hints: S.hints ? HINT_COUNT : 0})),
+  G = { players: players.map((p, i) => ({name: (p.name || '').trim() || `玩家${i + 1}`, avatar: p.avatar, color: COLORS[i], pos:0, prev:0, skip:false, hints: !S.hints ? 0 : S.hintN === 'inf' ? -1 : S.hintN})),
         board: JSON.parse(JSON.stringify(board)), hintsOn: !!S.hints, turn:0, winner:null, active:true, lastRoll:1, msg:'' };
   busy = false; saveG(); screen = 'game'; render();
   try { if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {}); } catch (e) {}
@@ -740,6 +744,7 @@ document.addEventListener('click', e => {
       drawBoard(); break;
     }
     case 'hints': S.hints = !S.hints; break;
+    case 'hintn': S.hintN = b.dataset.v === 'inf' ? 'inf' : +b.dataset.v; break;
     case 'len': S.len = +b.dataset.v; S.counts = defaultCounts(S.len); drawBoard(); break;
     case 'paste': ui.pasting = !ui.pasting; ui.libErr = ''; ui.libMsg = ''; break;
     case 'pastecancel': ui.pasting = false; break;
