@@ -1,0 +1,6 @@
+.venv/
+.claude/
+art-src/
+legacy/
+.DS_Store
+.env
