@@ -155,16 +155,22 @@ function drawBoard(){
   S.board = genBoard(chars, S.counts, pref);
 }
 function rearrange(){ if (!S.board) return; S.board = genBoard(boardChars(S.board), S.counts, uniChars(S.board)); }
-// Defaults tuned for a first game on the medium board; bump SETTINGS_VER to hand returning players the new defaults once.
-const DEFAULT_COUNTS = {dragon:1, mush:1, coach:2, bridge:1, uni:3}, SETTINGS_VER = 3;
+// Defaults per board length, tuned for a first game; picking a length loads its defaults.
+// Bump SETTINGS_VER to hand returning players the new defaults once.
+const DEFAULT_COUNTS = {
+  20: {dragon:1, coach:1, mush:0, bridge:1, uni:0},
+  28: {dragon:1, coach:2, mush:1, bridge:1, uni:1},
+  36: {dragon:1, coach:2, mush:2, bridge:1, uni:1}
+}, SETTINGS_VER = 4;
+const defaultCounts = len => ({...(DEFAULT_COUNTS[len] || DEFAULT_COUNTS[28])});
 function defaultSettings(){
   const s = { players:[{name:'玩家1', avatar:'👸'}, {name:'玩家2', avatar:'🐰'}], lib:'c300', mine:{chars:[], hard:[], name:''}, len:28,
-    counts:{...DEFAULT_COUNTS}, mute:false, board:null, ver:SETTINGS_VER };
+    counts:defaultCounts(28), mute:false, board:null, ver:SETTINGS_VER };
   return s;
 }
 let S = load(KEY_S);
 if (!S || !Array.isArray(S.players) || !S.players.length || !S.counts || !S.mine) S = defaultSettings();
-if (S.ver !== SETTINGS_VER){ S.counts = {...DEFAULT_COUNTS}; S.ver = SETTINGS_VER; S.board = null; }
+if (S.ver !== SETTINGS_VER){ S.counts = defaultCounts(S.len); S.ver = SETTINGS_VER; S.board = null; }
 if (!S.board || !Array.isArray(S.board.cells)) { drawBoard(); }
 let G = load(KEY_G);
 if (G && (!G.board || !Array.isArray(G.players))) G = null;
@@ -690,7 +696,7 @@ document.addEventListener('click', e => {
       S.lib = v; ui.pasting = v === 'mine' && !(S.mine.chars || []).length ? false : ui.pasting;
       drawBoard(); break;
     }
-    case 'len': S.len = +b.dataset.v; drawBoard(); break;
+    case 'len': S.len = +b.dataset.v; S.counts = defaultCounts(S.len); drawBoard(); break;
     case 'paste': ui.pasting = !ui.pasting; ui.libErr = ''; ui.libMsg = ''; break;
     case 'pastecancel': ui.pasting = false; break;
     case 'pastesave': {
