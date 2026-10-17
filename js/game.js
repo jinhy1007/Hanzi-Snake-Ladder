@@ -20,22 +20,32 @@ const uniq = a => [...new Set(a)];
 function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
 /* ---------- board logic ---------- */
+const DRAGON_ZONE = 2 / 3;  // dragons only appear in the first 2/3 of the path — meeting one near the castle is too discouraging
+const DOOR_MAX = 12;        // auto-placed magic doors: exit at most 12 cells after the entrance (players may move them further by hand)
 function genBoard(chars, c, uniPref){
-  const specials = shuffleArr([].concat(Array(c.dragon).fill('dragon'), Array(c.mush).fill('mush'), Array(c.coach).fill('coach')));
-  const n = specials.length, m = chars.length + n;
-  const jlo = Math.min(2, m - 1), jhi = Math.max(jlo, m - 2), span = jhi - jlo + 1;
-  const taken = new Set();
-  for (let k = 0; k < n; k++){
-    const a = jlo + Math.floor(k * span / n), b = jlo + Math.floor((k + 1) * span / n) - 1;
-    let p = a + rnd(Math.max(1, b - a + 1));
-    if (taken.has(p - 1) && p + 1 <= b) p++;
-    let d = 0;
-    while (taken.has(p)) { d++; p = (a + d) % m; }
-    taken.add(p);
-  }
+  const m = chars.length + c.dragon + c.mush + c.coach;
+  const jlo = Math.min(2, m - 1), jhi = Math.max(jlo, m - 2);
+  const taken = new Map();
+  // spread the given specials evenly over slots a..b, nudging each to the nearest free slot away from other specials
+  const spread = (types, a, b) => {
+    const k = types.length, span = b - a + 1;
+    types.forEach((t, q) => {
+      const lo = a + Math.floor(q * span / k), hi = a + Math.floor((q + 1) * span / k) - 1;
+      const want = lo + rnd(Math.max(1, hi - lo + 1));
+      let best = -1, bs = Infinity;
+      for (let j = a; j <= b; j++){
+        if (taken.has(j)) continue;
+        const sc = Math.abs(j - want) + (taken.has(j - 1) || taken.has(j + 1) ? 3 : 0);
+        if (sc < bs){ bs = sc; best = j; }
+      }
+      if (best >= 0) taken.set(best, t);
+    });
+  };
+  spread(Array(c.dragon).fill('dragon'), jlo, Math.max(jlo, Math.min(jhi, Math.floor(m * DRAGON_ZONE) - 1)));
+  spread(shuffleArr([].concat(Array(c.mush).fill('mush'), Array(c.coach).fill('coach'))), jlo, jhi);
   const cells = [{t:'start'}];
-  let ci = 0, si = 0;
-  for (let j = 0; j < m; j++) cells.push(taken.has(j) ? {t: specials[si++]} : {t:'char', ch: chars[ci++]});
+  let ci = 0;
+  for (let j = 0; j < m; j++) cells.push(taken.has(j) ? {t: taken.get(j)} : {t:'char', ch: chars[ci++]});
   cells.push({t:'end'});
   const total = cells.length;
   const charIdx = cells.map((x, i) => x.t === 'char' ? i : -1).filter(i => i >= 0);
@@ -43,7 +53,7 @@ function genBoard(chars, c, uniPref){
   for (let tries = 0; bridges.length < c.bridge && tries < 600; tries++){
     const from = charIdx[rnd(charIdx.length)];
     if (used.has(from)) continue;
-    const cands = charIdx.filter(to => to - from >= 5 && to - from <= 14 && to < total - 1 && !used.has(to));
+    const cands = charIdx.filter(to => to - from >= 5 && to - from <= DOOR_MAX && to < total - 1 && !used.has(to));
     if (!cands.length) continue;
     const to = cands[rnd(cands.length)];
     if ([...used].some(u => Math.abs(u - from) < 3 || Math.abs(u - to) < 3)) continue;
@@ -84,6 +94,7 @@ function roadPt(s){
 const MAPS = [{k:'short', n0:28}, {k:'mid', n0:36}, {k:'long', n0:44}];
 const mapFor = n => n <= 31 ? MAPS[0] : n <= 39 ? MAPS[1] : MAPS[2];
 const geoCache = {};
+const DCOL = ['#E2478E','#3B86E6','#2EAE70','#F0862A','#9A68DE'];
 function geo(n){
   if (geoCache[n]) return geoCache[n];
   const m = mapFor(n), send = (m.n0 - 1) * SP, sp = send / (n - 1);
@@ -113,7 +124,6 @@ function mapHTML(b, opt = {}){
   let s = `<svg class="mapsvg" viewBox="0 0 ${MW} ${H}" aria-hidden="true"><image href="${g.src}" x="0" y="0" width="${MW}" height="${H}" preserveAspectRatio="none"/>`;
   for (const c of g.chev) s += `<path d="M-4 -6 L4 0 L-4 6" transform="translate(${c.x.toFixed(1)} ${c.y.toFixed(1)}) rotate(${(c.a * 180 / Math.PI).toFixed(1)})" stroke="#B48443" stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/>`;
   s += '</svg>';
-  const DCOL = ['#E2478E','#3B86E6','#2EAE70','#F0862A','#9A68DE'];
   const doorAt = {};
   b.bridges.forEach((l, j) => { doorAt[l.from] = {k:'portal', n:j + 1, c:DCOL[j % 5]}; doorAt[l.to] = {k:'door', n:j + 1, c:DCOL[j % 5]}; });
   let tiles = '';
@@ -145,13 +155,16 @@ function drawBoard(){
   S.board = genBoard(chars, S.counts, pref);
 }
 function rearrange(){ if (!S.board) return; S.board = genBoard(boardChars(S.board), S.counts, uniChars(S.board)); }
+// Defaults tuned for a first game on the medium board; bump SETTINGS_VER to hand returning players the new defaults once.
+const DEFAULT_COUNTS = {dragon:1, mush:1, coach:2, bridge:1, uni:3}, SETTINGS_VER = 3;
 function defaultSettings(){
   const s = { players:[{name:'玩家1', avatar:'👸'}, {name:'玩家2', avatar:'🐰'}], lib:'c300', mine:{chars:[], hard:[], name:''}, len:28,
-    counts:{dragon:2, mush:2, coach:2, bridge:3, uni:3}, mute:false, board:null };
+    counts:{...DEFAULT_COUNTS}, mute:false, board:null, ver:SETTINGS_VER };
   return s;
 }
 let S = load(KEY_S);
 if (!S || !Array.isArray(S.players) || !S.players.length || !S.counts || !S.mine) S = defaultSettings();
+if (S.ver !== SETTINGS_VER){ S.counts = {...DEFAULT_COUNTS}; S.ver = SETTINGS_VER; S.board = null; }
 if (!S.board || !Array.isArray(S.board.cells)) { drawBoard(); }
 let G = load(KEY_G);
 if (G && (!G.board || !Array.isArray(G.players))) G = null;
@@ -323,7 +336,7 @@ function renderSetup(){
     </section>
     ${libPanel}
     <section class="panel"><h2>棋盘</h2>
-      ${b ? `<p class="note">点任意一个汉字格，可以换字，或者放上、拿走独角兽。往上滑能看到城堡。</p>
+      ${b ? `<p class="note">点任意一个汉字格，可以换字、放上或拿走独角兽，或者把魔法门的入口、出口移过来。往上滑能看到城堡。</p>
       <div class="pbox" id="pbox">${mapHTML(b, {edit:true})}</div>
       <div class="steps">${stepper('dragon', art('dragon','ico') + ' 恶龙')}${stepper('mush', art('mush','ico') + ' 毒蘑菇')}${stepper('coach', art('coach','ico') + ' 马车')}${stepper('bridge', art('portal','ico') + ' 魔法门')}${stepper('uni', art('unicorn','ico') + ' 独角兽')}</div>
       <div class="row"><button type="button" class="btn soft" data-act="redraw">🎲 重新抽字</button><button type="button" class="btn soft" data-act="rearrange">🔀 道具换位置</button></div>`
@@ -351,6 +364,21 @@ function rerenderSetupKeepScroll(){
 }
 
 /* tile editor (setup) */
+// Magic doors in the tile sheet: each pair can have its entrance or exit moved to this tile (entrance must stay before exit).
+function doorRows(i){
+  const brs = S.board.bridges; if (!brs.length) return '';
+  const c = S.board.cells[i], here = brs.findIndex(l => l.from === i || l.to === i);
+  const rows = brs.map((l, j) => {
+    const mine = j === here;
+    const okFrom = !mine && here < 0 && !c.uni && i < l.to, okTo = !mine && here < 0 && !c.uni && i > l.from;
+    return `<div class="drow"><span class="dn" style="--dc:${DCOL[j % 5]}">${j + 1}</span>
+      <button type="button" class="btn soft" data-t="from" data-j="${j}" ${okFrom ? '' : 'disabled'}>${art('portal','ico')} 入口移到这里</button>
+      <button type="button" class="btn soft" data-t="to" data-j="${j}" ${okTo ? '' : 'disabled'}>${art('door','ico')} 出口移到这里</button></div>`;
+  }).join('');
+  const why = here >= 0 ? `这一格是 ${here + 1} 号门的${brs[here].from === i ? '入口' : '出口'}。`
+    : c.uni ? '这一格有独角兽，先拿走独角兽才能放魔法门。' : '入口要在出口前面。';
+  return `<div class="doors"><div class="dh">魔法门</div>${rows}<p class="note">${why}</p></div>`;
+}
 function openTile(i){
   const ov = document.createElement('div'); ov.className = 'overlay';
   const paint = (msg, err) => {
@@ -361,6 +389,7 @@ function openTile(i){
       <div class="inrow"><input id="ownCh" maxlength="4" placeholder="自己输入" aria-label="自己输入一个字" autocomplete="off"><button type="button" class="btn soft" data-t="own">换成这个字</button></div>
       <button type="button" class="btn soft wide" data-t="uni" ${isBridge ? 'disabled' : ''}>${art('unicorn','ico')} ${c.uni ? '拿走独角兽' : '放上独角兽'}</button>
       ${isBridge ? '<p class="note">这一格有魔法门，不能放独角兽。</p>' : ''}
+      ${doorRows(i)}
       ${msg ? `<p class="${err ? 'err' : 'ok'}">${esc(msg)}</p>` : ''}
       <button type="button" class="btn primary wide" data-t="done">完成</button></div>`;
   };
@@ -381,6 +410,8 @@ function openTile(i){
       c.ch = v;
     } else if (t === 'uni'){
       c.uni = !c.uni;
+    } else if (t === 'from' || t === 'to'){
+      S.board.bridges[+b.dataset.j][t] = i;
     }
     saveS(); paint(); rerenderSetupKeepScroll();
   });

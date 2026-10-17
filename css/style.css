@@ -165,6 +165,11 @@ button.tile:active{transform:rotate(var(--rot)) scale(.93)}
 .tzg span{position:relative;z-index:1;font-family:var(--f-zi);font-size:140px;font-size:74cqw;line-height:1;color:var(--ink)}
 .sheet .row .btn{font-size:21px}
 .inrow{display:flex;gap:8px;width:100%}
+.doors{width:100%;display:flex;flex-direction:column;gap:8px;padding-top:4px;border-top:2px dashed var(--line)}
+.doors .dh{font-size:17px;color:var(--ink-soft)}
+.drow{display:flex;gap:8px;align-items:center}
+.drow .btn{flex:1;min-width:0;font-size:15px;padding-left:6px;padding-right:6px;white-space:nowrap}
+.drow .dn{flex:none;width:28px;height:28px;border-radius:99px;background:var(--dc);color:var(--white);display:grid;place-items:center;font:600 15px/1 var(--f-text)}
 .inrow input{text-align:center;font-family:var(--f-zi);font-size:24px}
 .inrow .btn{flex:none}
 .link{background:none;border:none;color:var(--ink-soft);font-family:var(--f-ui);font-size:17px;padding:6px 10px;cursor:pointer;text-decoration:underline;text-underline-offset:4px}
