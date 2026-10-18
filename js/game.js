@@ -666,7 +666,7 @@ async function readFlow(pi, cell){
   if (br) hint = `这一格有 ${G.board.bridges.indexOf(br) + 1} 号魔法门！读对这个字，再读对门另一头的字，就能穿过去。`;
   if (!(await readCard(p, cell.ch, hint))){
     sfx('bad');
-    await card({who:p, title:'没关系，记住它！', zi:cell.ch, learn: await hintData(cell.ch), text:p.prev === 0 ? '这次要回到森林出发点。' : `这次要回到第 ${p.prev} 格。`, speak:true, autoSay:true, btns:[['ok','记住了 👍']]});
+    await card({who:p, title:'没关系，记住它！', zi:cell.ch, learn: await hintData(cell.ch), text:p.prev === 0 ? '这次要回到森林出发点。' : `这次要回到第 ${p.prev} 格。`, speak:true, autoSay:true, btns:[['ok','知道了']]});
     await jumpTo(pi, p.prev, 600); return false;
   }
   sfx('good');
@@ -683,7 +683,7 @@ async function readFlow(pi, cell){
       await jumpTo(pi, br.to, 900); return false;
     }
     sfx('bad');
-    await card({who:p, title:'差一点点！', zi:top.ch, learn: await hintData(top.ch), text:'这次穿不过魔法门，留在原来这一格。', speak:true, autoSay:true, btns:[['ok','记住了 👍']]});
+    await card({who:p, title:'差一点点！', zi:top.ch, learn: await hintData(top.ch), text:'这次穿不过魔法门，留在原来这一格。', speak:true, autoSay:true, btns:[['ok','知道了']]});
     scrollToCell(p.pos, true, true);
     return false;
   }
