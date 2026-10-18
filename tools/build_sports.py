@@ -91,6 +91,94 @@ def fix_joins(canvas):
     return canvas
 
 
+# 用户试玩后发现的问题（2026-10-18）：雪顶房子、被跑道盖掉楼顶的房子。请 AI 重画这几块，贴回时保护跑道。
+BUILDING_FIXES = [
+    # (窗口顶部行, 替换区域 [(x0, y0, x1, y1), …], 先把跑道补画回去的区域或 None, 提示词)
+    (1100, [(0, 1460, 1024, 1920)], None,
+     'Fix two buildings in this summer city picture. 1) The tall glass skyscraper standing next to the big grey elephant is cut off: '
+     'its top disappears into the running track. Rebuild it as a complete, shorter modern building with a proper flat rooftop '
+     '(maybe a little rooftop garden), standing fully on its own island and ending clearly below the edge of the track. 2) The '
+     'building at the top-right edge has a white snowy roof: give it a normal summer roof (terracotta tiles or a rooftop terrace). '
+     'There must be NO snow anywhere — it is a warm summer day. '),
+    (2050, [(0, 2590, 1024, 3010)], 'whole',
+     'Fix the buildings on the lower-left island of this summer city picture. 1) The big house on the far left has a white snowy '
+     'roof that covers part of the running track above it. Remove the snow and that overhang completely: the running track must '
+     'continue there, smooth and empty with its white lane lines, exactly like the rest of the track. Give the house a complete roof '
+     'of terracotta tiles that sits entirely on the island, BELOW the running track — make the house shorter so its roof does not '
+     'touch the track. 2) The round pink '
+     'tower and the building with the balcony full of spectators are cut off at the top: complete each with a proper roof, also '
+     'shorter so they fit fully on the island below the track. There must be NO snow anywhere — it is a warm summer day. '),
+    (2050, [(0, 2590, 1024, 3010)], 'whole',
+     'The four buildings on the lower-left island (the house with the tiled roof on the far left, the round tower, the building '
+     'with the balcony of spectators and the yellow building) are too tall: their roofs rise into the running track above them. '
+     'Make all four buildings LOWER — remove a floor and keep their complete tiled roofs — so that every roof ends clearly below '
+     'the bottom edge of the running track. The running track above them must be fully visible, empty and smooth, with its white '
+     'lane lines continuing. Keep the panda with the pink stroller, the spectators, the elephant and all other details. '),
+]
+FIX_TAIL = ('Keep the running track, its exact position, curves and white lane lines, and every other building, animal, bridge, '
+            'canal and boat exactly unchanged. Same 3D miniature-diorama style. No text, letters or numbers.')
+
+
+def fix_buildings(canvas):
+    """按 BUILDING_FIXES 局部重画。跑道（按颜色找出来的）不替换；被雪顶盖住的那段跑道，先按描出来的跑道中线补画回去再送给 AI。"""
+    from PIL import ImageChops
+    protect = track_mask(canvas).filter(ImageFilter.MinFilter(5)).filter(ImageFilter.GaussianBlur(2))
+    for k, (top, rects, refill, prompt) in enumerate(BUILDING_FIXES):
+        cache = os.path.join(G.RAW, f'sports-fix-{top}.png' if k < 2 else f'sports-fix-{top}-{k}.png')
+        win = canvas.crop((0, top, G.W, top + G.WIN_H))
+        if os.path.exists(cache):
+            new = Image.open(cache).convert('RGB')
+        else:
+            print(f'  修房子（窗口第 {top} 行起）…')
+            new = G.kie_image(prompt + FIX_TAIL, '2:3', images=[win], label=f'sports-fix-{top}').convert('RGB').resize((G.W, G.WIN_H), Image.LANCZOS)
+            new.save(cache)
+        m = Image.new('L', (G.W, G.WIN_H), 0); d = ImageDraw.Draw(m)
+        for x0, y0, x1, y1 in rects:
+            d.rectangle([x0, y0 - top, x1, y1 - top], fill=255)
+        m = m.filter(ImageFilter.GaussianBlur(20))
+        if refill != 'whole':   # 'whole'：这一块连跑道一起用 AI 的结果，之后重新描跑道中线
+            m = ImageChops.subtract(m, protect.crop((0, top, G.W, top + G.WIN_H)))
+        if refill and refill != 'whole':   # 补画的跑道也保护住
+            x0, y0, x1, y1 = refill
+            band = Image.new('L', (G.W, G.WIN_H), 0)
+            ImageDraw.Draw(band).line([(x, y - top) for x, y in ideal_track_px() if x0 - 80 <= x <= x1 + 80 and y0 - 80 <= y <= y1 + 80],
+                                      fill=255, width=round(66 * G.S))
+            m = ImageChops.subtract(m, band.filter(ImageFilter.GaussianBlur(2)))
+        canvas.paste(Image.composite(new, canvas.crop((0, top, G.W, top + G.WIN_H)), m), (0, top))
+    return canvas
+
+
+_IDEAL = None
+def ideal_track_px():
+    """上一次装进游戏的跑道中线（js/map-paths.js），换算成像素。"""
+    global _IDEAL
+    if _IDEAL is None:
+        import re
+        txt = open(os.path.join(G.ROOT, 'js', 'map-paths.js'), encoding='utf-8').read()
+        _IDEAL = [(float(a) * G.S, float(b) * G.S) for a, b in re.findall(r'\[([\d.]+),([\d.]+)\]', txt)]
+    return _IDEAL
+
+
+def refill_track(win, top, box):
+    """在 box 范围里沿跑道中线补画跑道（跑道色 + 白色分道线），盖住画到跑道上的东西。"""
+    x0, y0, x1, y1 = box
+    layer = Image.new('RGBA', win.size, (0, 0, 0, 0)); d = ImageDraw.Draw(layer)
+    pts = [(x, y - top) for x, y in ideal_track_px()]
+    d.line(pts, fill=TRACK + (255,), width=round(72 * G.S), joint='curve')
+    for w in (54, 36, 18):
+        d.line(pts, fill=LANE + (255,), width=round(w * G.S) + 4, joint='curve')
+        d.line(pts, fill=TRACK + (255,), width=round(w * G.S), joint='curve')
+    clip = Image.new('L', win.size, 0); ImageDraw.Draw(clip).rectangle([x0, y0 - top, x1, y1 - top], fill=255)
+    clip = clip.filter(ImageFilter.GaussianBlur(12))
+    layer.putalpha(ImageChops_multiply(layer.getchannel('A'), clip))
+    out = win.convert('RGBA'); out.alpha_composite(layer); return out.convert('RGB')
+
+
+def ImageChops_multiply(a, b):
+    from PIL import ImageChops
+    return ImageChops.multiply(a, b)
+
+
 def skeleton_path(mask, start_px, scale=4):
     """把跑道区域细化成一条中线，从起点附近沿中线走到最远（最上面）的一端。返回原图像素坐标的折线。"""
     from collections import deque
@@ -262,7 +350,16 @@ def install_extras(canvas, g, path):
 
 def main():
     g = G.map_geo(G.MAPS['long']); Hpx = round(g['H'] * G.S)
-    canvas = fix_joins(composite(Hpx))
+    canvas = fix_buildings(fix_joins(composite(Hpx)))
+    if '--keep-path' in sys.argv:   # 只换图，格子位置沿用 js/map-paths.js（修图没有移动跑道时用）
+        import re
+        txt = open(os.path.join(G.ROOT, 'js', 'map-paths.js'), encoding='utf-8').read()
+        path = [(float(a), float(b)) for a, b in re.findall(r'\[([\d.]+),([\d.]+)\]', txt)]
+        out = os.path.join(G.OUT_MAPS if '--install' in sys.argv else os.path.join(G.ROOT, 'art-src', 'preview'), 'map-long-sports.webp')
+        if '--install' in sys.argv:
+            rgb = canvas.convert('RGB'); o2 = os.path.join(G.OUT_PROPS, 'sports')
+            for name, box in CROPS.items(): rgb.crop(box).save(os.path.join(o2, f'{name}.webp'), 'WEBP', quality=86)
+        canvas.convert('RGB').save(out, 'WEBP', quality=82, method=6); print('完成（沿用原来的格子位置）', out); return
     sk = skeleton_path(track_mask(canvas), G.P(g['road'][0]))
     end = min(range(len(sk)), key=lambda i: (sk[i][0] - FINISH[0]) ** 2 + (sk[i][1] - FINISH[1]) ** 2)
     sk = sk[:end + 1]                       # 到终点线就停，最后一格正好在终点线上
