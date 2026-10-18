@@ -538,7 +538,7 @@ const lastIdx = () => G.board.cells.length - 1;
 function renderGame(){
   app.innerHTML = `
     <div class="gbar" id="gbar">
-      <div class="gtop"><button type="button" class="icon-btn" data-act="home" aria-label="回到设置">⚙️</button>
+      <div class="gtop"><button type="button" class="icon-btn" data-act="home" aria-label="返回主页">🏠</button>
         <div class="gwho" id="gwho"></div>
         <button type="button" class="icon-btn" data-act="mute" aria-label="声音开关">${S.mute ? '🔇' : '🔊'}</button></div>
       <div class="track"><span class="end">${art('forest')}</span><div class="rail" id="rail"></div><span class="end">${art('castle')}</span></div>
@@ -709,7 +709,7 @@ async function win(pi){
   p.pos = lastIdx();
   G.winner = pi; G.active = false; G.msg = `${p.name} 到达城堡！`;
   saveG(); renderStatus(); scrollToCell(p.pos, true, true); sfx('win'); confetti();
-  const k = await card({who:p, img:'castle', title:`${p.name} 到达城堡啦！`, text:'第一个走到城堡，太厉害了！', btns:[['setup','⚙️ 修改设置'],['again','🎲 再玩一局','primary']]});
+  const k = await card({who:p, img:'castle', title:`${p.name} 到达城堡啦！`, text:'第一个走到城堡，太厉害了！', btns:[['setup','🏠 返回主页','home big'],['again','🎲 再玩一局','primary big']]});
   busy = false;
   drawBoard(); saveS();  // every new game gets fresh characters and freshly placed props, unicorns and doors
   if (k === 'again' && S.board) newGame(S.players, S.board);

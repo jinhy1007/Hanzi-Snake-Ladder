@@ -41,6 +41,8 @@ button{font-family:inherit;color:inherit}
 .btn.primary:active{box-shadow:0 1px 0 var(--gold-deep)}
 .btn.good{background:var(--leaf);color:var(--white);box-shadow:0 4px 0 var(--leaf-deep)}
 .btn.good:active{box-shadow:0 1px 0 var(--leaf-deep)}
+.btn.home{background:var(--rose);color:var(--white);box-shadow:0 4px 0 var(--rose-deep)}
+.btn.home:active{box-shadow:0 1px 0 var(--rose-deep)}
 .btn.bad{background:var(--red);color:var(--white);box-shadow:0 4px 0 var(--red-deep)}
 .btn.bad:active{box-shadow:0 1px 0 var(--red-deep)}
 .btn.soft{background:var(--soft);box-shadow:0 3px 0 var(--line);font-size:17px;min-height:46px}
@@ -186,7 +188,8 @@ button.tile:active{transform:rotate(var(--rot)) scale(.93)}
 .learn .ci{font-family:var(--f-zi);font-size:34px;color:var(--ink);line-height:1.2;margin-top:4px}
 .learn .ci b{color:var(--rose-deep);font-weight:400}
 .learn .cipy{font-family:var(--f-text);font-size:15px;color:var(--ink-soft)}
-.sheet .row .btn.big{flex:1;font-size:25px;padding:16px 18px;animation:nudge 1.6s ease-in-out .8s infinite}
+.sheet .row .btn.big{flex:1;min-width:0;font-size:clamp(19px,6vw,25px);padding:16px 10px;white-space:nowrap}
+.sheet .row .btn.big.primary{animation:nudge 1.6s ease-in-out .8s infinite}
 @keyframes nudge{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
 @media (prefers-reduced-motion: reduce){.sheet .row .btn.big{animation:none}}
 .flip .back .py{font-family:var(--f-text);font-size:46px;font-weight:600;color:var(--rose-deep);line-height:1.1}
