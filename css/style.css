@@ -59,13 +59,14 @@ button{font-family:inherit;color:inherit}
 
 /* players */
 .prow{display:flex;align-items:center;gap:10px}
-.avbtn{width:54px;height:54px;flex:none;border-radius:50%;border:4px solid var(--pc);background:var(--white);font-size:28px;cursor:pointer;display:grid;place-items:center;padding:0}
+.avbtn{width:64px;height:64px;flex:none;border:none;background:radial-gradient(ellipse 46% 14% at 50% 90%,var(--pc) 0 92%,transparent 100%);font-size:28px;cursor:pointer;display:grid;place-items:center;padding:0}
 .prow input,.inrow input{flex:1;min-width:0;font-family:var(--f-ui);font-size:19px;padding:11px 12px;border-radius:12px;border:2px solid var(--line);background:var(--white);color:var(--ink)}
 .prow input:focus,.inrow input:focus{border-color:var(--rose);outline:none}
 .x{width:40px;height:40px;flex:none;border-radius:12px;border:none;background:var(--soft);font-size:16px;cursor:pointer;color:var(--ink-soft)}
 .x:disabled{opacity:.3;cursor:default}
 .avimg{width:112%;height:112%;object-fit:contain;display:block;pointer-events:none;margin-top:-6%}
-.avbtn,.gwho .av,.mini,.token .face,.track .dot{overflow:hidden}
+.track .dot{overflow:hidden}
+.avbtn .avimg,.gwho .av .avimg,.mini .avimg,.token .avimg{width:100%;height:100%;margin:0;filter:drop-shadow(0 2px 2px rgba(46,42,74,.35))}
 .avpick{display:flex;flex-direction:column;gap:8px}
 .avcre{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;padding:8px;background:var(--soft);border-radius:16px}
 .avcre button{display:flex;flex-direction:column;align-items:center;gap:2px;border:none;border-radius:14px;background:var(--white);padding:6px 4px 8px;cursor:pointer;font-family:var(--f-ui);color:var(--ink)}
@@ -132,10 +133,13 @@ button.tile:active{transform:rotate(var(--rot)) scale(.93)}
 .ico{height:1.5em;width:auto;vertical-align:-.4em;border-radius:.3em}
 .track .end img{height:28px;width:auto;display:block;border-radius:6px}
 .tokens{position:absolute;inset:0;pointer-events:none;z-index:2}
-.token{position:absolute;left:0;top:0;width:7.6%;aspect-ratio:1;transform:translate(-50%,-50%);transition:left var(--dur,180ms) ease-in-out,top var(--dur,180ms) ease-in-out}
-.token .face{width:100%;height:100%;border-radius:50%;background:var(--white);border:.75cqw solid var(--pc);display:grid;place-items:center;font-size:4.3cqw;box-shadow:0 .7cqw 0 rgba(46,42,74,.3)}
+/* players stand on the board as big 3D figures: (left, top) is where their feet are */
+.token{position:absolute;left:0;top:0;width:12.5%;aspect-ratio:1;transform:translate(-50%,-92%);transition:left var(--dur,180ms) ease-in-out,top var(--dur,180ms) ease-in-out}
+.token .face{position:relative;width:100%;height:100%;display:grid;place-items:center;font-size:7cqw;transform-origin:50% 100%}
+.token .spot{position:absolute;left:18%;right:18%;bottom:-3%;height:16%;border-radius:50%;background:var(--pc);opacity:.75;box-shadow:0 0 0 .5cqw rgba(255,255,255,.75)}
 .token.now{z-index:3}
-.token.now .face{animation:bob 1.1s ease-in-out infinite;box-shadow:0 0 0 1cqw rgba(255,255,255,.9),0 .7cqw 0 rgba(46,42,74,.3)}
+.token.now .face{animation:bob 1.1s ease-in-out infinite}
+.token.now .spot{opacity:1;box-shadow:0 0 0 .7cqw #fff,0 0 2cqw .6cqw var(--pc)}
 .token.hop .face{animation:hop .2s ease-out}
 .map.boom{animation:boom .5s}
 
@@ -143,7 +147,7 @@ button.tile:active{transform:rotate(var(--rot)) scale(.93)}
 .gbar{position:sticky;top:env(safe-area-inset-top, 0px);z-index:8;background:var(--card);border-radius:0 0 20px 20px;padding:8px 10px 10px;box-shadow:0 4px 0 var(--line);display:flex;flex-direction:column;gap:8px;margin-top:-10px}
 .gtop{display:flex;align-items:center;gap:10px}
 .gwho{flex:1;min-width:0;display:flex;align-items:center;gap:10px}
-.gwho .av{width:48px;height:48px;flex:none;border-radius:50%;border:4px solid var(--pc);background:var(--white);display:grid;place-items:center;font-size:26px}
+.gwho .av{width:62px;height:62px;flex:none;margin:-8px 0 -6px;background:radial-gradient(ellipse 44% 13% at 50% 92%,var(--pc) 0 92%,transparent 100%);display:grid;place-items:center;font-size:30px}
 .gwho .nm{font-size:21px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .gwho .sub{font-family:var(--f-text);font-size:13px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .gwho > div{min-width:0}
@@ -165,7 +169,7 @@ button.tile:active{transform:rotate(var(--rot)) scale(.93)}
   animation:fade .18s ease-out}
 .sheet{background:var(--card);border-radius:26px;padding:22px 18px 18px;width:min(100%,400px);display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;box-shadow:0 8px 0 rgba(46,42,74,.2);animation:pop .26s cubic-bezier(.3,1.5,.6,1)}
 .sheet .who{display:flex;gap:8px;align-items:center;font-size:18px;color:var(--ink-soft)}
-.mini{width:34px;height:34px;border-radius:50%;border:3px solid var(--pc);background:var(--white);display:grid;place-items:center;font-size:18px}
+.mini{width:46px;height:46px;margin:-6px 0;background:radial-gradient(ellipse 42% 12% at 50% 92%,var(--pc) 0 92%,transparent 100%);display:grid;place-items:center;font-size:24px}
 .sheet h3{margin:0;font-weight:400;font-size:30px;text-wrap:balance}
 .sheet p{margin:0;font-family:var(--f-text);font-size:17px;line-height:1.55;color:var(--ink-soft);max-width:30em}
 .sheet .note{font-size:14px}

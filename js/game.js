@@ -12,7 +12,6 @@ const CREATURES = {
 const CREATURE_AVS = Object.keys(CREATURES).map(k => 'c:' + k);
 const creatureOf = a => typeof a === 'string' && a.startsWith('c:') ? CREATURES[a.slice(2)] : null;
 const avHTML = a => creatureOf(a) ? `<img class="avimg" src="images/avatars/${a.slice(2)}.webp" alt="${creatureOf(a).zh}" draggable="false">` : esc(a || '🙂');
-const AVATARS = ['👸','🧚‍♀️','🧜‍♀️','🤴','🐰','🐼','🐱','🐶','🦊','🐯','🐸','🐵','🐧','🐻','🐨','🦁','🐷','🐥','🐹','🦖'];
 const LIMITS = {dragon:[0,4], mush:[0,4], coach:[0,4], bridge:[0,5], uni:[0,8]};
 const LENS = [20, 28, 36];
 const KEY_S = 'szsxq.settings.v2', KEY_G = 'szsxq.game.v2';
@@ -251,6 +250,13 @@ function defaultSettings(){
 let S = load(KEY_S);
 if (!S || !Array.isArray(S.players) || !S.players.length || !S.counts || !S.mine) S = defaultSettings();
 if (S.hints === undefined) S.hints = true;
+// emoji avatars were removed: give those players a free creature (and its name, if they kept the default name)
+S.players.forEach(p => {
+  if (creatureOf(p.avatar)) return;
+  const av = CREATURE_AVS.find(a => !S.players.some(q => q.avatar === a)) || CREATURE_AVS[0];
+  if (/^玩家\d+$/.test(p.name || '') || !(p.name || '').trim()) p.name = creatureOf(av).zh;
+  p.avatar = av;
+});
 if (!HINT_CHOICES.includes(S.hintN)) S.hintN = 3;
 if (S.ver !== SETTINGS_VER){ S.counts = defaultCounts(S.len); S.ver = SETTINGS_VER; S.board = null; }
 if (!S.board || !Array.isArray(S.board.cells)) { drawBoard(); }
@@ -461,8 +467,7 @@ function renderSetup(){
       <input id="pname-${i}" data-i="${i}" maxlength="8" value="${esc(p.name)}" aria-label="玩家${i + 1}的名字" autocomplete="off">
       <button type="button" class="x" data-act="delp" data-i="${i}" aria-label="去掉这个玩家" ${S.players.length <= 1 ? 'disabled' : ''}>✕</button>
     </div>
-    ${ui.openAv === i ? `<div class="avpick"><div class="avcre">${CREATURE_AVS.map(a => { const c = creatureOf(a); return `<button type="button" data-act="setav" data-i="${i}" data-av="${a}" class="${a === p.avatar ? 'on' : ''}" ${a !== p.avatar && takenAv.includes(a) ? 'disabled' : ''}>${avHTML(a)}<b>${c.zh}</b><small>${c.en}</small></button>`; }).join('')}</div>
-      <div class="avgrid">${AVATARS.map(a => `<button type="button" data-act="setav" data-i="${i}" data-av="${a}" class="${a === p.avatar ? 'on' : ''}" ${a !== p.avatar && takenAv.includes(a) ? 'disabled' : ''}>${a}</button>`).join('')}</div></div>` : ''}`).join('');
+    ${ui.openAv === i ? `<div class="avpick"><div class="avcre">${CREATURE_AVS.map(a => { const c = creatureOf(a); return `<button type="button" data-act="setav" data-i="${i}" data-av="${a}" class="${a === p.avatar ? 'on' : ''}" ${a !== p.avatar && takenAv.includes(a) ? 'disabled' : ''}>${avHTML(a)}<b>${c.zh}</b><small>${c.en}</small></button>`; }).join('')}</div></div>` : ''}`).join('');
   const stepper = (k, label) => {
     const v = !b ? 0 : k === 'bridge' ? b.bridges.length : k === 'uni' ? b.cells.filter(c => c.uni).length : S.counts[k];
     return `<div class="step"><span class="nm">${label}</span><span class="ctl">
@@ -670,7 +675,7 @@ function placeTokens(dur = 180){
   wrap.style.setProperty('--dur', dur + 'ms');
   if (wrap.children.length !== G.players.length){
     wrap.innerHTML = '';
-    G.players.forEach(p => { const t = document.createElement('div'); t.className = 'token'; t.style.setProperty('--pc', p.color); t.innerHTML = `<div class="face">${avHTML(p.avatar)}</div>`; wrap.appendChild(t); });
+    G.players.forEach(p => { const t = document.createElement('div'); t.className = 'token'; t.style.setProperty('--pc', p.color); t.innerHTML = `<i class="spot"></i><div class="face">${avHTML(p.avatar)}</div>`; wrap.appendChild(t); });
   }
   const g = geo(G.board.cells.length), last = lastIdx(), groups = {};
   G.players.forEach((p, i) => { const k = Math.min(p.pos, last); (groups[k] = groups[k] || []).push(i); });
@@ -678,8 +683,9 @@ function placeTokens(dur = 180){
     const c = g.cells[+pos], m = ids.length;
     ids.forEach((pi, k) => {
       let dx, dy;
-      if (m === 1){ dx = -19; dy = 20; }
-      else { const row = Math.floor(k / 3), per = Math.min(m - row * 3, 3); dx = (k % 3 - (per - 1) / 2) * 22; dy = 22 + row * 26; }
+      // dx/dy = where the figure's feet stand, relative to the tile centre (map units; a tile is 58 wide)
+      if (m === 1){ dx = 24; dy = 30; }
+      else { const row = Math.floor(k / 3), per = Math.min(m - row * 3, 3); dx = (k % 3 - (per - 1) / 2) * 26 + row * 10; dy = 30 + row * 12; }
       const el = wrap.children[pi];
       el.style.left = ((c.x + dx) / MW * 100) + '%';
       el.style.top = ((c.y + dy) / g.H * 100) + '%';
@@ -861,7 +867,7 @@ document.addEventListener('click', e => {
     case 'addp': {
       if (S.players.length >= 6) return;
       const used = S.players.map(p => p.avatar);
-      const av = CREATURE_AVS.concat(AVATARS).find(a => !used.includes(a));
+      const av = CREATURE_AVS.find(a => !used.includes(a));
       S.players.push({name: creatureOf(av) ? creatureOf(av).zh : `玩家${S.players.length + 1}`, avatar: av}); ui.openAv = -1; break;
     }
     case 'delp': if (S.players.length > 1){ S.players.splice(i, 1); ui.openAv = -1; } break;
