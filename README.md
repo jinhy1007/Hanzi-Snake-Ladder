@@ -9,12 +9,27 @@ index.html            页面
 css/style.css         样式
 js/game.js            游戏逻辑（字库、棋盘、道具、读音判断）
 js/hints.js           提示卡数据：常用 300 字的拼音和常用组词（由 tools/build_hints.py 生成）
-images/maps/          三张地图背景：map-short / map-mid / map-long
-images/props/         道具卡片（coach、mush、dragon）和角标（unicorn、door-open、door-closed），以及城堡、森林小图
+images/maps/          地图背景：map-short、map-mid（森林城堡），map-long-sports（长棋盘：动物城运动会）
+images/props/         森林主题的道具卡片和角标；images/props/sports/ 是运动会主题的道具和从地图上裁的小图
+js/map-paths.js       长棋盘运动会地图上画出来的跑道中线（tools/build_sports.py 生成），格子沿着它摆
 tools/gen_art.py      用画图 API 生成上面这些图片的脚本
 ```
 
-棋盘格子数 = 字数 + 道具数 + 2，游戏按格子数自动选地图：≤31 格用 short，32–39 格用 mid，≥40 格用 long。格子均匀排在画好的道路上。
+棋盘格子数 = 字数 + 道具数 + 2，游戏按格子数自动选地图：≤31 格用 short，32–39 格用 mid，≥40 格用长棋盘的运动会地图。
+
+## 两个主题
+
+主题跟着地图走（`js/game.js` 里的 `THEMES`）：短、中棋盘是森林城堡，长棋盘是动物城运动会。道具的作用不变，只是图片和故事不同：
+
+| 作用 | 森林城堡 | 动物城运动会 |
+|---|---|---|
+| 回到起点 | 恶龙 | 踩到香蕉皮掉河里 |
+| 停一轮 | 毒蘑菇 | 排队买冰淇淋 |
+| 往前两格 | 南瓜马车 | 蹦床 |
+| 读对飞三格 | 独角兽 | 能量果汁 |
+| 读对两个字跳过去 | 魔法门（入口 / 出口） | 滑翔伞（起飞点 / 降落点） |
+
+运动会地图是三张选定的样图拼成的（`tools/theme_samples.py`、`tools/theme_edits.py` 画样图，`tools/build_sports.py --install` 拼图、描出跑道中线、裁小图），道具图由 `tools/sports_props.py` 生成。样图原图在本地的 `art-src/`，没有上传。
 
 ## 重新生成图片
 

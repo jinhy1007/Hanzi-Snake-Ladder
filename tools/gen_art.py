@@ -21,6 +21,7 @@ API key 从环境变量或项目根目录的 .env 文件读取，脚本不会打
   .venv/bin/python tools/gen_art.py props [coach mush dragon unicorn door-closed door-open]
   .venv/bin/python tools/gen_art.py all
   API 返回的原图缓存在 art-src/raw/，再次运行不会重复花钱；加 --force 才会重新画。
+  加 --preview 只把地图输出到 art-src/preview/，不改游戏里用的图。
 """
 import base64, io, json, math, os, sys, time, uuid, urllib.request, urllib.error
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
@@ -53,6 +54,8 @@ MAPS = {'short': 28, 'mid': 36, 'long': 44}   # 每张地图按这个格子数�
 W = 1024; S = W / MW                            # 像素 / 地图单位
 WIN_H = 1536; STEP = 1024                       # 分段生成：每段 2:3，重叠 512px
 BLEND = 110                                     # 接缝渐变带高度（像素）
+OVERLAP = 450                                   # 新拼法：每段沿用旧画面的高度（大约）
+SEAM_SAFE = {'long'}                            # 用新拼法（接缝藏在路下面）的地图；其余地图保持原来的图和缓存
 
 
 def road_pt(s):
@@ -371,14 +374,10 @@ TOUCH_PROMPT = {
 TOUCH_TAIL = ('Keep the sandy path in exactly the same position, shape and width, and keep it empty. Same style: ' + STYLE)
 
 
-def touch_up(canvas, name, g, f, prov, force):
+def touch_up(canvas, name, g, f, prov, force, joins):
     """拼好的地图再请 AI 局部重画几处：拼接缝、起点、终点。贴回时把放格子的那段路保护起来，格子位置不会变。"""
     Hpx = canvas.height
-    tops = []; t = Hpx - WIN_H
-    while t > 0:
-        tops.append(t); t -= STEP
-    tops.append(0)
-    rows = sorted([b + STEP for b in tops[1:]] + EXTRA_SEAMS.get(name, []))  # 每段新画的部分和旧段的接缝
+    rows = sorted(joins + EXTRA_SEAMS.get(name, []))  # 没能藏到路下面的接缝，加上手动标出的横线
     seams = []
     for r in rows:  # 太近的缝合并成一处
         if seams and r - seams[-1] < 300:
@@ -394,7 +393,7 @@ def touch_up(canvas, name, g, f, prov, force):
     ImageDraw.Draw(guard).line([P(p) for p in g['road']], fill=255, width=round(74 * S))
     guard = guard.filter(ImageFilter.GaussianBlur(3))
     for kind, row, top, y0, y1 in jobs:
-        key = f'touch-{name}-{kind}-{row}'
+        key = f"{'touch2' if name in SEAM_SAFE else 'touch'}-{name}-{kind}-{row}"
         cache = os.path.join(RAW, key + '.png')
         win = canvas.crop((0, top, W, top + WIN_H))
         if os.path.exists(cache) and not force:
@@ -422,15 +421,29 @@ def gen_map(name, force):
     out = os.path.join(OUT_MAPS, f'map-{name}.webp')
     prov = provider()
     guide, g, f = draw_guide(name); Hpx = guide.height
-    tops = []
-    t = Hpx - WIN_H
-    while t > 0:
-        tops.append(t); t -= STEP
-    tops.append(0)
-    canvas = Image.new('RGBA', (W, Hpx)); done_top = Hpx
-    for i, top in enumerate(tops):
-        cache = os.path.join(RAW, f'map-{name}-{i}.png')
-        overlap = min(top + WIN_H - done_top, WIN_H - STEP) if i else 0  # 最多沿用旧段 512px
+    canvas = Image.new('RGBA', (W, Hpx)); joins = []
+    v2 = name in SEAM_SAFE
+    road_rows = sorted(round(run_y(g, k) * S) for k in range(g['runs'] + 1))
+    plan = []  # (top, r)：r 是本段沿用旧画面的上沿，也是接缝所在的行
+    if v2:
+        # 先定接缝：每段的「已画好 / 草图」分界正好落在一条横向路上，AI 在那里留下的痕迹和拼接线都被路盖住
+        top = Hpx - WIN_H; plan.append((top, None)); done = top
+        while done > 0:
+            cand = [r for r in road_rows if r >= done + 60]
+            r = cand[0] if cand else done + 100
+            top = max(0, r - (WIN_H - OVERLAP)); plan.append((top, r)); done = top
+    else:
+        t = Hpx - WIN_H
+        while t > 0:
+            plan.append((t, None)); t -= STEP
+        plan.append((0, None))
+    done_top = Hpx
+    for i, (top, r) in enumerate(plan):
+        cache = os.path.join(RAW, f"{'map2' if v2 else 'map'}-{name}-{i}.png")
+        if v2:
+            overlap = top + WIN_H - r if i else 0
+        else:
+            overlap = min(top + WIN_H - done_top, WIN_H - STEP) if i else 0  # 最多沿用旧段 512px
         win = guide.crop((0, top, W, top + WIN_H)).convert('RGBA')
         if overlap:
             win.paste(canvas.crop((0, top + WIN_H - overlap, W, top + WIN_H)), (0, WIN_H - overlap))
@@ -438,7 +451,7 @@ def gen_map(name, force):
             seg = Image.open(cache).convert('RGBA')
         else:
             prompt = map_prompt(g, f, top / S, (top + WIN_H) / S, i == 0)
-            print(f'  画 {name} 第 {i + 1}/{len(tops)} 段 …')
+            print(f'  画 {name} 第 {i + 1}/{len(plan)} 段 …')
             if prov == 'openai':
                 mask = None
                 if overlap:
@@ -451,22 +464,30 @@ def gen_map(name, force):
                 seg = gemini_image(prompt, '2:3', images=[win], label=f'map-{name}-{i}')
             seg = seg.resize((W, WIN_H), Image.LANCZOS)
             seg.save(cache)
-        if overlap:  # 重叠区保留旧段，只在重叠区最上面一条窄带里渐变，避免整片重影
+        if overlap:
             band = min(BLEND, overlap)
-            old = canvas.crop((0, top + WIN_H - overlap, W, top + WIN_H))
-            new_b = seg.crop((0, WIN_H - overlap, W, WIN_H - overlap + band))
-            seg.paste(old, (0, WIN_H - overlap))
+            if v2:
+                cut = r                                   # 就在路下面
+            else:
+                cut = top + WIN_H - overlap + band // 2   # 旧做法：重叠区上沿
+                joins.append(top + WIN_H - overlap)
+            c0 = cut - band // 2 - top
+            old = canvas.crop((0, top + c0, W, top + WIN_H))
+            new_b = seg.crop((0, c0, W, c0 + band))
+            seg.paste(old, (0, c0))
             ramp = Image.linear_gradient('L').resize((W, band)).point(lambda v: 255 - v)
-            seg.paste(Image.composite(new_b, old.crop((0, 0, W, band)), ramp), (0, WIN_H - overlap))
+            seg.paste(Image.composite(new_b, old.crop((0, 0, W, band)), ramp), (0, c0))
         canvas.paste(seg, (0, top)); done_top = top
-    if name == 'short':  # 进度条两头和获胜卡片用的小图：直接从地图上裁
+    if name == 'short' and not PREVIEW:  # 进度条两头和获胜卡片用的小图：直接从地图上裁
         x0, y0, x1, y1 = f['castle']
         canvas.crop(tuple(round(v * S) for v in (x0, max(0, y0 - 10), x1, y1 + 10))).convert('RGB').save(
             os.path.join(OUT_PROPS, 'castle.webp'), 'WEBP', quality=86)
         canvas.crop((0, Hpx - round(130 * S), round(170 * S), Hpx)).convert('RGB').save(
             os.path.join(OUT_PROPS, 'forest.webp'), 'WEBP', quality=86)
     canvas = paint_road(canvas, g)
-    canvas = touch_up(canvas, name, g, f, prov, force)
+    canvas = touch_up(canvas, name, g, f, prov, force, joins)
+    if PREVIEW:
+        out = os.path.join(ROOT, 'art-src', 'preview', f'map-{name}.webp'); os.makedirs(os.path.dirname(out), exist_ok=True)
     os.makedirs(OUT_MAPS, exist_ok=True)
     canvas.convert('RGB').save(out, 'WEBP', quality=80, method=6)
     print(f'完成 {out}（{W}x{Hpx}）')
@@ -534,6 +555,9 @@ def gen_prop(name, force):
     else:
         im.convert('RGB').resize((512, 512), Image.LANCZOS).save(out, 'WEBP', quality=84, method=6)
     print(f'完成 {out}')
+
+
+PREVIEW = '--preview' in sys.argv   # 只输出到 art-src/preview/，不改游戏用的图
 
 
 def main():

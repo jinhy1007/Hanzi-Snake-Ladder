@@ -70,12 +70,62 @@ const uniChars = b => b.cells.filter(c => c.uni).map(c => c.ch);
 const bridgeEnds = b => new Set(b.bridges.flatMap(l => [l.from, l.to]));
 
 /* ---------- illustrations ---------- */
-const IMG = {
-  dragon:'images/props/dragon.webp', mush:'images/props/mush.webp', coach:'images/props/coach.webp',
-  unicorn:'images/props/unicorn.webp', portal:'images/props/door-open.webp', door:'images/props/door-closed.webp',
-  castle:'images/props/castle.webp', forest:'images/props/forest.webp'
+/* ---------- themes: each board's map decides its pictures and wording ---------- */
+// Prop keys stay the same in the game logic (dragon = back to start, mush = skip a turn, coach = +2,
+// uni = read for +3, bridge/portal/door = read two characters to jump); only the story around them changes.
+const THEMES = {
+  forest: {
+    art: { dragon:'images/props/dragon.webp', mush:'images/props/mush.webp', coach:'images/props/coach.webp',
+      unicorn:'images/props/unicorn.webp', portal:'images/props/door-open.webp', door:'images/props/door-closed.webp',
+      start:'images/props/forest.webp', end:'images/props/castle.webp', win:'images/props/castle.webp' },
+    t: { dragon:'恶龙', mush:'毒蘑菇', coach:'南瓜马车', coachS:'马车', uni:'独角兽', door:'魔法门', from:'入口', to:'出口', end:'城堡',
+      subtitle:'从森林出发，读着汉字走到城堡', toTop:'往上滑能看到城堡。',
+      ruleGoal:'大家轮流掷骰子，从森林出发，谁先走到城堡谁就赢。',
+      ruleDragon:'恶龙：被吓跑了，回到森林出发点。', ruleMush:'毒蘑菇：下一轮休息，不能掷骰子。',
+      ruleCoach:'南瓜马车：直接再往前走两格。', ruleUni:'独角兽：读对这个字，往前飞三格。',
+      ruleDoor:'魔法门：读对开着的门上的字，再读对同号关着的门上的字，就能穿过去。',
+      dragonCard: n => ({title:'恶龙来啦！', text:`${n} 被恶龙吓跑了，要回到森林出发点。`, btn:'跑回森林'}),
+      mushCard: n => ({title:'毒蘑菇！', text:`${n} 下一轮要休息，不能掷骰子。`, btn:'知道了'}),
+      skipCard: n => ({title:'休息一轮', text:`${n} 吃了毒蘑菇，这一轮不能掷骰子。`, btn:'下一位'}),
+      coachCard: {title:'坐上南瓜马车！', text:'马车载着你，直接再往前走两格。', btn:'出发！'},
+      uniHint:'这个字上有独角兽！读对了，可以往前飞三格。',
+      uniCard: {title:'读对啦！', text:'独角兽载着你往前飞三格。', btn:'飞！'},
+      doorHint: k => `这一格有 ${k} 号魔法门！读对这个字，再读对门另一头的字，就能穿过去。`,
+      doorHint2: (k, to) => `读对了！再读出 ${k} 号门另一头的这个字（第 ${to} 格），就能穿过去。`,
+      doorCard: (n, to) => ({title:'穿过魔法门！', text:`${n} 直接到第 ${to} 格。`, btn:'走过去！'}),
+      doorFail: {title:'差一点点！', text:'这次穿不过魔法门，留在原来这一格。'},
+      backHome:'这次要回到森林出发点。',
+      winMsg: n => `${n} 到达城堡！`, winCard: n => ({title:`${n} 到达城堡啦！`, text:'第一个走到城堡，太厉害了！'}) }
+  },
+  sports: {
+    art: { dragon:'images/props/sports/splash.webp', mush:'images/props/sports/icecream.webp', coach:'images/props/sports/trampoline.webp',
+      unicorn:'images/props/sports/juice.webp', portal:'images/props/sports/glide-up.webp', door:'images/props/sports/glide-down.webp',
+      start:'images/props/sports/start.webp', end:'images/props/sports/finish.webp', win:'images/props/sports/podium.webp' },
+    dragonSfx: 'splash',
+    t: { dragon:'掉河里', mush:'冰淇淋车', coach:'蹦床', coachS:'蹦床', uni:'能量果汁', door:'滑翔伞', from:'起飞点', to:'降落点', end:'终点',
+      subtitle:'从起跑线出发，读着汉字冲过终点', toTop:'往上滑能看到终点。',
+      ruleGoal:'大家轮流掷骰子，从起跑线出发，谁先冲过终点谁就赢。',
+      ruleDragon:'掉河里：踩到香蕉皮掉进河里，要回家换衣服，回到起点重新出发。', ruleMush:'冰淇淋车：忍不住去排队买冰淇淋，下一轮停一次。',
+      ruleCoach:'蹦床：弹得高高的，直接往前跳两格。', ruleUni:'能量果汁：读对这个字，喝下果汁往前冲三格。',
+      ruleDoor:'滑翔伞：读对起飞点上的字，再读对同号降落点上的字，就能飞过去。',
+      dragonCard: n => ({title:'扑通！掉河里了！', text:`${n} 踩到香蕉皮，掉进了河里，要回家换衣服，回到起点重新出发。`, btn:'回起点'}),
+      mushCard: n => ({title:'冰淇淋车！', text:`${n} 忍不住去排队买冰淇淋，下一轮要停一次。`, btn:'知道了'}),
+      skipCard: n => ({title:'还在排队', text:`${n} 还在排队买冰淇淋，这一轮不能掷骰子。`, btn:'下一位'}),
+      coachCard: {title:'跳上蹦床！', text:'蹦床把你弹得高高的，直接往前跳两格！', btn:'跳！'},
+      uniHint:'这个字旁边有能量果汁！读对了，喝下去往前冲三格。',
+      uniCard: {title:'读对啦！', text:'喝下能量果汁，飞快地往前冲三格！', btn:'冲！'},
+      doorHint: k => `这一格是 ${k} 号滑翔伞起飞点！读对这个字，再读对 ${k} 号降落点上的字，就能飞过去。`,
+      doorHint2: (k, to) => `读对了！再读出 ${k} 号降落点上的这个字（第 ${to} 格），就能起飞。`,
+      doorCard: (n, to) => ({title:'起飞啦！', text:`${n} 乘着滑翔伞，飞到第 ${to} 格。`, btn:'飞过去！'}),
+      doorFail: {title:'风太大了！', text:'今天不适合起飞，留在原来这一格。'},
+      backHome:'这次要回到起点。',
+      winMsg: n => `${n} 冲过终点！`, winCard: n => ({title:`${n} 冲过终点啦！`, text:'第一个冲过终点，太厉害了！'}) }
+  }
 };
-const art = (k, cls, alt) => `<img class="${cls || ''}" src="${IMG[k]}" alt="${alt || ''}" draggable="false">`;
+let TH = THEMES.forest;
+const themeOf = b => THEMES[(b ? mapFor(b.cells.length) : MAPS[1]).theme] || THEMES.forest;
+const useTheme = b => { TH = themeOf(b); return TH; };
+const art = (k, cls, alt) => `<img class="${cls || ''}" src="${TH.art[k]}" alt="${alt || ''}" draggable="false">`;
 const RAINBOW_ICON = `<svg viewBox="0 0 60 34" aria-hidden="true"><g fill="none" stroke-width="4.2" stroke-linecap="round">
   <path d="M5 32 A25 25 0 0 1 55 32" stroke="#E9475B"/><path d="M9.2 32 A20.8 20.8 0 0 1 50.8 32" stroke="#FF9A3C"/><path d="M13.4 32 A16.6 16.6 0 0 1 46.6 32" stroke="#FFD43B"/>
   <path d="M17.6 32 A12.4 12.4 0 0 1 42.4 32" stroke="#3FB873"/><path d="M21.8 32 A8.2 8.2 0 0 1 38.2 32" stroke="#4C8DF0"/></g></svg>`;
@@ -91,13 +141,30 @@ function roadPt(s){
 }
 // Each background is painted (tools/gen_art.py) around a road built for n0 cells; keep MAPS in sync with that script.
 // A board with n cells uses the closest map and spreads its cells evenly along that road.
-const MAPS = [{k:'short', n0:28}, {k:'mid', n0:36}, {k:'long', n0:44}];
+// The long board uses the sports-day map; its cells follow the track painted in the picture (MAP_PATHS, from tools/build_sports.py).
+const MAPS = [{k:'short', n0:28, theme:'forest'}, {k:'mid', n0:36, theme:'forest'},
+  {k:'long', n0:44, theme:'sports', src:'images/maps/map-long-sports.webp', path:'long'}];
 const mapFor = n => n <= 31 ? MAPS[0] : n <= 39 ? MAPS[1] : MAPS[2];
 const geoCache = {};
 const DCOL = ['#E2478E','#3B86E6','#2EAE70','#F0862A','#9A68DE'];
+function pathGeo(n, m, pd){
+  const P = pd.path, cum = [0];
+  for (let i = 1; i < P.length; i++) cum.push(cum[i - 1] + Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]));
+  const total = cum[cum.length - 1];
+  const at = d => {
+    let i = 1; while (i < P.length - 1 && cum[i] < d) i++;
+    const t = (d - cum[i - 1]) / ((cum[i] - cum[i - 1]) || 1), [x0, y0] = P[i - 1], [x1, y1] = P[i];
+    return { x: x0 + (x1 - x0) * t, y: y0 + (y1 - y0) * t, a: Math.atan2(y1 - y0, x1 - x0) };
+  };
+  const cells = Array.from({length:n}, (_, i) => at(total * i / (n - 1)));
+  const chev = []; for (let i = 0; i < n - 1; i++) chev.push(at(total * (i + .5) / (n - 1)));
+  return { H: pd.H, cells, chev, src: m.src };
+}
 function geo(n){
   if (geoCache[n]) return geoCache[n];
-  const m = mapFor(n), send = (m.n0 - 1) * SP, sp = send / (n - 1);
+  const m = mapFor(n);
+  if (m.path && typeof MAP_PATHS !== 'undefined' && MAP_PATHS[m.path]) return (geoCache[n] = pathGeo(n, m, MAP_PATHS[m.path]));
+  const send = (m.n0 - 1) * SP, sp = send / (n - 1);
   let minY = roadPt(send).y;
   for (let s = 0; s < send; s += 6) minY = Math.min(minY, roadPt(s).y);
   const castleBase = 238 + 22, offY = castleBase + 72 - minY, H = Math.round(offY + 162);
@@ -120,6 +187,7 @@ function rainbowSVG(g, l){
   return s;
 }
 function mapHTML(b, opt = {}){
+  useTheme(b);
   const n = b.cells.length, g = geo(n), H = g.H;
   let s = `<svg class="mapsvg" viewBox="0 0 ${MW} ${H}" aria-hidden="true"><image href="${g.src}" x="0" y="0" width="${MW}" height="${H}" preserveAspectRatio="none"/>`;
   for (const c of g.chev) s += `<path d="M-4 -6 L4 0 L-4 6" transform="translate(${c.x.toFixed(1)} ${c.y.toFixed(1)}) rotate(${(c.a * 180 / Math.PI).toFixed(1)})" stroke="#B48443" stroke-width="3.2" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/>`;
@@ -131,10 +199,10 @@ function mapHTML(b, opt = {}){
     const p = g.cells[i], rot = (((i * 53) % 9) - 4) * .7;
     let inner;
     if (c.t === 'start') inner = '<span class="lb big">出发</span>';
-    else if (c.t === 'end') inner = '<span class="lb big">城堡</span>';
-    else if (c.t === 'dragon') inner = `${art('dragon', 'cardimg')}<span class="lb">恶龙</span>`;
-    else if (c.t === 'mush') inner = `${art('mush', 'cardimg')}<span class="lb">毒蘑菇</span>`;
-    else if (c.t === 'coach') inner = `${art('coach', 'cardimg')}<span class="lb">南瓜马车</span>`;
+    else if (c.t === 'end') inner = `<span class="lb big">${TH.t.end}</span>`;
+    else if (c.t === 'dragon') inner = `${art('dragon', 'cardimg')}<span class="lb">${TH.t.dragon}</span>`;
+    else if (c.t === 'mush') inner = `${art('mush', 'cardimg')}<span class="lb">${TH.t.mush}</span>`;
+    else if (c.t === 'coach') inner = `${art('coach', 'cardimg')}<span class="lb">${TH.t.coach}</span>`;
     else inner = `<span class="zi">${esc(c.ch)}</span><span class="num">${i}</span>${c.uni ? art('unicorn', 'uni') : ''}${doorAt[i] ? `<span class="door" style="--dc:${doorAt[i].c}">${art(doorAt[i].k)}<b>${doorAt[i].n}</b></span>` : ''}`;
     const tap = opt.edit && c.t === 'char';
     const tag = tap ? 'button' : 'div';
@@ -209,6 +277,15 @@ function sfx(k){
     else if (k === 'magic') [784, 988, 1175, 1568, 1976].forEach((f, i) => tone(f, i * .07, .25, 'sine', .09));
     else if (k === 'bad') [440, 349].forEach((f, i) => tone(f, i * .15, .26, 'sine', .12));
     else if (k === 'win') [523, 659, 784, 659, 784, 1047].forEach((f, i) => tone(f, i * .12, .26, 'triangle', .13));
+    else if (k === 'splash'){
+      // a quick slip whistle, then a burst of filtered noise for the splash
+      tone(900, 0, .18, 'sine', .07); tone(420, .1, .18, 'sine', .06);
+      const len = a.sampleRate * .6, buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+      const src = a.createBufferSource(), bp = a.createBiquadFilter(), g = a.createGain();
+      src.buffer = buf; bp.type = 'bandpass'; bp.frequency.setValueAtTime(1800, a.currentTime + .22); bp.frequency.exponentialRampToValueAtTime(350, a.currentTime + .8);
+      g.gain.value = .5; src.connect(bp); bp.connect(g); g.connect(a.destination); src.start(a.currentTime + .22);
+    }
     else if (k === 'roar'){
       const len = a.sampleRate * .7, buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0);
       for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2) * (0.6 + 0.4 * Math.sin(i / 90));
@@ -347,7 +424,7 @@ function confetti(){
 
 /* ---------- setup screen ---------- */
 function renderSetup(){
-  const b = S.board;
+  const b = S.board, t = useTheme(b).t;
   const takenAv = S.players.map(p => p.avatar);
   const players = S.players.map((p, i) => `
     <div class="prow" style="--pc:${COLORS[i]}">
@@ -372,14 +449,14 @@ function renderSetup(){
       </div>
       ${S.lib === 'mine' ? `
         <div class="row"><button type="button" class="btn soft" data-act="upload">📄 上传 Excel</button><button type="button" class="btn soft" data-act="paste">✏️ 粘贴汉字</button></div>
-        <p class="note">表格第一列写汉字，一格一个字或一个词都可以。想优先放独角兽的难字，在第二列写「难」。也支持 CSV 文件。${hardN ? `<br>已标出 ${hardN} 个难字。` : ''}</p>
+        <p class="note">表格第一列写汉字，一格一个字或一个词都可以。想优先放${t.uni}的难字，在第二列写「难」。也支持 CSV 文件。${hardN ? `<br>已标出 ${hardN} 个难字。` : ''}</p>
         ${ui.pasting ? `<textarea id="pasteIn" aria-label="粘贴汉字" placeholder="把要练的汉字粘贴到这里">${esc((S.mine.chars || []).join(''))}</textarea>
           <div class="row"><button type="button" class="btn" data-act="pastecancel">取消</button><button type="button" class="btn primary" data-act="pastesave">保存字库</button></div>` : ''}` : ''}
       ${ui.libErr ? `<p class="err">${esc(ui.libErr)}</p>` : ''}${ui.libMsg ? `<p class="ok">${esc(ui.libMsg)}</p>` : ''}
       <div class="lbl-row"><span>棋盘长度</span><div class="seg">${LENS.map((n, i) => `<button type="button" data-act="len" data-v="${n}" class="${S.len === n ? 'on' : ''}">${['短','中','长'][i]} ${n}字</button>`).join('')}</div></div>
     </section>`;
   app.innerHTML = `
-    <header class="top"><h1 class="logo">识字蛇形棋<small>从森林出发，读着汉字走到城堡</small></h1>
+    <header class="top"><h1 class="logo">识字蛇形棋<small>${t.subtitle}</small></h1>
       <button type="button" class="icon-btn" data-act="mute" aria-label="声音开关">${S.mute ? '🔇' : '🔊'}</button></header>
     ${G && G.active ? '<button type="button" class="btn primary wide" data-act="resume">▶ 继续上一局</button>' : ''}
     <section class="panel"><h2>谁来玩？</h2>
@@ -389,9 +466,9 @@ function renderSetup(){
     </section>
     ${libPanel}
     <section class="panel"><h2>棋盘</h2>
-      ${b ? `<p class="note">点任意一个汉字格，可以换字、放上或拿走独角兽，或者把魔法门的入口、出口移过来。往上滑能看到城堡。</p>
+      ${b ? `<p class="note">点任意一个汉字格，可以换字、放上或拿走${t.uni}，或者把${t.door}的${t.from}、${t.to}移过来。${t.toTop}</p>
       <div class="pbox" id="pbox">${mapHTML(b, {edit:true})}</div>
-      <div class="steps">${stepper('dragon', art('dragon','ico') + ' 恶龙')}${stepper('mush', art('mush','ico') + ' 毒蘑菇')}${stepper('coach', art('coach','ico') + ' 马车')}${stepper('bridge', art('portal','ico') + ' 魔法门')}${stepper('uni', art('unicorn','ico') + ' 独角兽')}</div>
+      <div class="steps">${stepper('dragon', art('dragon','ico') + ' ' + t.dragon)}${stepper('mush', art('mush','ico') + ' ' + t.mush)}${stepper('coach', art('coach','ico') + ' ' + t.coachS)}${stepper('bridge', art('portal','ico') + ' ' + t.door)}${stepper('uni', art('unicorn','ico') + ' ' + t.uni)}</div>
       <div class="row"><button type="button" class="btn soft" data-act="redraw">🎲 重新抽字</button><button type="button" class="btn soft" data-act="rearrange">🔀 道具换位置</button></div>`
       : `<p class="err">字库里至少要有 8 个字才能摆棋盘。</p>`}
     </section>
@@ -403,13 +480,13 @@ function renderSetup(){
     <button type="button" class="btn primary wide go" data-act="start" ${b ? '' : 'disabled'}>开始游戏！</button>
     <section class="panel"><h2>怎么玩</h2>
       <ul class="rules">
-        <li><span>🎲</span><span>大家轮流掷骰子，从森林出发，谁先走到城堡谁就赢。</span></li>
+        <li><span>🎲</span><span>${t.ruleGoal}</span></li>
         <li><span>📖</span><span>走到汉字格要大声读出这个字，读不出来就回到上次的位置。</span></li>
-        <li><span>${art('dragon','ico')}</span><span>恶龙：被吓跑了，回到森林出发点。</span></li>
-        <li><span>${art('mush','ico')}</span><span>毒蘑菇：下一轮休息，不能掷骰子。</span></li>
-        <li><span>${art('coach','ico')}</span><span>南瓜马车：直接再往前走两格。</span></li>
-        <li><span>${art('unicorn','ico')}</span><span>独角兽：读对这个字，往前飞三格。</span></li>
-        <li><span>${art('portal','ico')}</span><span>魔法门：读对开着的门上的字，再读对同号关着的门上的字，就能穿过去。</span></li>
+        <li><span>${art('dragon','ico')}</span><span>${t.ruleDragon}</span></li>
+        <li><span>${art('mush','ico')}</span><span>${t.ruleMush}</span></li>
+        <li><span>${art('coach','ico')}</span><span>${t.ruleCoach}</span></li>
+        <li><span>${art('unicorn','ico')}</span><span>${t.ruleUni}</span></li>
+        <li><span>${art('portal','ico')}</span><span>${t.ruleDoor}</span></li>
         ${S.hints ? `<li><span>💡</span><span>提示卡：${hintDesc(S.hintN)}，不认识的字可以翻开卡片看拼音和组词。</span></li>` : ''}
       </ul>
     </section>`;
@@ -425,18 +502,18 @@ function rerenderSetupKeepScroll(){
 /* tile editor (setup) */
 // Magic doors in the tile sheet: each pair can have its entrance or exit moved to this tile (entrance must stay before exit).
 function doorRows(i){
-  const brs = S.board.bridges; if (!brs.length) return '';
+  const brs = S.board.bridges, t = TH.t; if (!brs.length) return '';
   const c = S.board.cells[i], here = brs.findIndex(l => l.from === i || l.to === i);
   const rows = brs.map((l, j) => {
     const mine = j === here;
     const okFrom = !mine && here < 0 && !c.uni && i < l.to, okTo = !mine && here < 0 && !c.uni && i > l.from;
     return `<div class="drow"><span class="dn" style="--dc:${DCOL[j % 5]}">${j + 1}</span>
-      <button type="button" class="btn soft" data-t="from" data-j="${j}" ${okFrom ? '' : 'disabled'}>${art('portal','ico')} 入口移到这里</button>
-      <button type="button" class="btn soft" data-t="to" data-j="${j}" ${okTo ? '' : 'disabled'}>${art('door','ico')} 出口移到这里</button></div>`;
+      <button type="button" class="btn soft" data-t="from" data-j="${j}" ${okFrom ? '' : 'disabled'}>${art('portal','ico')} ${t.from}移到这里</button>
+      <button type="button" class="btn soft" data-t="to" data-j="${j}" ${okTo ? '' : 'disabled'}>${art('door','ico')} ${t.to}移到这里</button></div>`;
   }).join('');
-  const why = here >= 0 ? `这一格是 ${here + 1} 号门的${brs[here].from === i ? '入口' : '出口'}。`
-    : c.uni ? '这一格有独角兽，先拿走独角兽才能放魔法门。' : '入口要在出口前面。';
-  return `<div class="doors"><div class="dh">魔法门</div>${rows}<p class="note">${why}</p></div>`;
+  const why = here >= 0 ? `这一格是 ${here + 1} 号${t.door}的${brs[here].from === i ? t.from : t.to}。`
+    : c.uni ? `这一格有${t.uni}，先拿走${t.uni}才能放${t.door}。` : `${t.from}要在${t.to}前面。`;
+  return `<div class="doors"><div class="dh">${t.door}</div>${rows}<p class="note">${why}</p></div>`;
 }
 function openTile(i){
   const ov = document.createElement('div'); ov.className = 'overlay';
@@ -446,8 +523,8 @@ function openTile(i){
       <div class="tzg"><span>${esc(c.ch)}</span></div>
       <button type="button" class="btn soft wide" data-t="rand">🎲 随机换一个字</button>
       <div class="inrow"><input id="ownCh" maxlength="4" placeholder="自己输入" aria-label="自己输入一个字" autocomplete="off"><button type="button" class="btn soft" data-t="own">换成这个字</button></div>
-      <button type="button" class="btn soft wide" data-t="uni" ${isBridge ? 'disabled' : ''}>${art('unicorn','ico')} ${c.uni ? '拿走独角兽' : '放上独角兽'}</button>
-      ${isBridge ? '<p class="note">这一格有魔法门，不能放独角兽。</p>' : ''}
+      <button type="button" class="btn soft wide" data-t="uni" ${isBridge ? 'disabled' : ''}>${art('unicorn','ico')} ${c.uni ? '拿走' : '放上'}${TH.t.uni}</button>
+      ${isBridge ? `<p class="note">这一格有${TH.t.door}，不能放${TH.t.uni}。</p>` : ''}
       ${doorRows(i)}
       ${msg ? `<p class="${err ? 'err' : 'ok'}">${esc(msg)}</p>` : ''}
       <button type="button" class="btn primary wide" data-t="done">完成</button></div>`;
@@ -494,7 +571,7 @@ function rowsToLib(rows){
   rows.forEach((r, ri) => {
     const a = String(r[0] == null ? '' : r[0]).trim();
     if (ri === 0 && /^(汉字|生字|字|字词|词语|词)$/.test(a)) return;
-    const cs = hanOf(a), h = /难|独角兽|hard|★|\*/i.test(String(r[1] == null ? '' : r[1]));
+    const cs = hanOf(a), h = /难|独角兽|果汁|hard|★|\*/i.test(String(r[1] == null ? '' : r[1]));
     cs.forEach(c => { chars.push(c); if (h) hard.add(c); });
   });
   let u = uniq(chars);
@@ -536,12 +613,13 @@ const dieHTML = n => Array.from({length:9}, (_, i) => `<i class="${FACES[n].incl
 const lastIdx = () => G.board.cells.length - 1;
 
 function renderGame(){
+  useTheme(G.board);
   app.innerHTML = `
     <div class="gbar" id="gbar">
       <div class="gtop"><button type="button" class="icon-btn" data-act="home" aria-label="返回主页">🏠</button>
         <div class="gwho" id="gwho"></div>
         <button type="button" class="icon-btn" data-act="mute" aria-label="声音开关">${S.mute ? '🔇' : '🔊'}</button></div>
-      <div class="track"><span class="end">${art('forest')}</span><div class="rail" id="rail"></div><span class="end">${art('castle')}</span></div>
+      <div class="track"><span class="end">${art('start')}</span><div class="rail" id="rail"></div><span class="end">${art('end')}</span></div>
     </div>
     ${mapHTML(G.board, {game:true})}
     <div class="dock" id="dock"><div class="die" id="die" aria-hidden="true">${dieHTML(G.lastRoll || 1)}</div>
@@ -637,18 +715,21 @@ async function turnFlow(){
 async function resolve(pi){
   const p = G.players[pi], cell = G.board.cells[p.pos], last = lastIdx();
   if (cell.t === 'dragon'){
-    sfx('roar'); const mp = document.getElementById('map'); mp.classList.remove('boom'); void mp.offsetWidth; mp.classList.add('boom');
-    await card({who:p, img:'dragon', title:'恶龙来啦！', text:`${p.name} 被恶龙吓跑了，要回到森林出发点。`, btns:[['ok','跑回森林','bad']]});
+    sfx(TH.dragonSfx || 'roar'); const mp = document.getElementById('map'); mp.classList.remove('boom'); void mp.offsetWidth; mp.classList.add('boom');
+    const o = TH.t.dragonCard(p.name);
+    await card({who:p, img:'dragon', title:o.title, text:o.text, btns:[['ok',o.btn,'bad']]});
     await jumpTo(pi, 0, 900); return false;
   }
   if (cell.t === 'mush'){
     sfx('bad');
-    await card({who:p, img:'mush', title:'毒蘑菇！', text:`${p.name} 下一轮要休息，不能掷骰子。`, btns:[['ok','知道了']]});
+    const o = TH.t.mushCard(p.name);
+    await card({who:p, img:'mush', title:o.title, text:o.text, btns:[['ok',o.btn]]});
     p.skip = true; return false;
   }
   if (cell.t === 'coach'){
     sfx('magic');
-    await card({who:p, img:'coach', title:'坐上南瓜马车！', text:'马车载着你，直接再往前走两格。', btns:[['ok','出发！','primary']]});
+    const o = TH.t.coachCard;
+    await card({who:p, img:'coach', title:o.title, text:o.text, btns:[['ok',o.btn,'primary']]});
     await stepTo(pi, Math.min(p.pos + 2, last)); return p.pos >= last;
   }
   if (cell.t === 'char') return readFlow(pi, cell);
@@ -662,28 +743,30 @@ async function readFlow(pi, cell){
   const p = G.players[pi], last = lastIdx();
   const br = G.board.bridges.find(l => l.from === p.pos);
   let hint = '大声读出这个字！';
-  if (cell.uni) hint = '这个字上有独角兽！读对了，可以往前飞三格。';
-  if (br) hint = `这一格有 ${G.board.bridges.indexOf(br) + 1} 号魔法门！读对这个字，再读对门另一头的字，就能穿过去。`;
+  if (cell.uni) hint = TH.t.uniHint;
+  if (br) hint = TH.t.doorHint(G.board.bridges.indexOf(br) + 1);
   if (!(await readCard(p, cell.ch, hint))){
     sfx('bad');
-    await card({who:p, title:'没关系，记住它！', zi:cell.ch, learn: await hintData(cell.ch), text:p.prev === 0 ? '这次要回到森林出发点。' : `这次要回到第 ${p.prev} 格。`, speak:true, autoSay:true, btns:[['ok','Okay']]});
+    await card({who:p, title:'没关系，记住它！', zi:cell.ch, learn: await hintData(cell.ch), text:p.prev === 0 ? TH.t.backHome : `这次要回到第 ${p.prev} 格。`, speak:true, autoSay:true, btns:[['ok','Okay']]});
     await jumpTo(pi, p.prev, 600); return false;
   }
   sfx('good');
   if (cell.uni){
-    await card({who:p, img:'unicorn', title:'读对啦！', text:'独角兽载着你往前飞三格。', btns:[['ok','飞！','primary']]});
+    const o = TH.t.uniCard;
+    await card({who:p, img:'unicorn', title:o.title, text:o.text, btns:[['ok',o.btn,'primary']]});
     sfx('magic');
     await stepTo(pi, Math.min(p.pos + 3, last)); return p.pos >= last;
   }
   if (br){
     const top = G.board.cells[br.to];
-    if (await readCard(p, top.ch, `读对了！再读出 ${G.board.bridges.indexOf(br) + 1} 号门另一头的这个字（第 ${br.to} 格），就能穿过去。`)){
+    if (await readCard(p, top.ch, TH.t.doorHint2(G.board.bridges.indexOf(br) + 1, br.to))){
       sfx('magic');
-      await card({who:p, img:'portal', title:'穿过魔法门！', text:`${p.name} 直接到第 ${br.to} 格。`, btns:[['ok','走过去！','primary']]});
+      const o = TH.t.doorCard(p.name, br.to);
+      await card({who:p, img:'portal', title:o.title, text:o.text, btns:[['ok',o.btn,'primary']]});
       await jumpTo(pi, br.to, 900); return false;
     }
     sfx('bad');
-    await card({who:p, title:'差一点点！', zi:top.ch, learn: await hintData(top.ch), text:'这次穿不过魔法门，留在原来这一格。', speak:true, autoSay:true, btns:[['ok','Okay']]});
+    await card({who:p, title:TH.t.doorFail.title, zi:top.ch, learn: await hintData(top.ch), text:TH.t.doorFail.text, speak:true, autoSay:true, btns:[['ok','Okay']]});
     scrollToCell(p.pos, true, true);
     return false;
   }
@@ -697,7 +780,8 @@ async function nextTurn(){
   for (let guard = 0; G.players[G.turn].skip && guard < n * 2; guard++){
     const q = G.players[G.turn];
     q.skip = false; renderStatus(); saveG(); scrollToCell(q.pos, true, true);
-    await card({who:q, img:'mush', title:'休息一轮', text:`${q.name} 吃了毒蘑菇，这一轮不能掷骰子。`, btns:[['ok','下一位']]});
+    const o = TH.t.skipCard(q.name);
+    await card({who:q, img:'mush', title:o.title, text:o.text, btns:[['ok',o.btn]]});
     G.turn = (G.turn + 1) % n;
   }
   busy = false; saveG(); renderStatus();
@@ -707,9 +791,10 @@ async function nextTurn(){
 async function win(pi){
   const p = G.players[pi];
   p.pos = lastIdx();
-  G.winner = pi; G.active = false; G.msg = `${p.name} 到达城堡！`;
+  G.winner = pi; G.active = false; G.msg = TH.t.winMsg(p.name);
   saveG(); renderStatus(); scrollToCell(p.pos, true, true); sfx('win'); confetti();
-  const k = await card({who:p, img:'castle', title:`${p.name} 到达城堡啦！`, text:'第一个走到城堡，太厉害了！', btns:[['setup','🏠 返回主页','home big'],['again','🎲 再玩一局','primary big']]});
+  const wc = TH.t.winCard(p.name);
+  const k = await card({who:p, img:'win', title:wc.title, text:wc.text, btns:[['setup','🏠 返回主页','home big'],['again','🎲 再玩一局','primary big']]});
   busy = false;
   drawBoard(); saveS();  // every new game gets fresh characters and freshly placed props, unicorns and doors
   if (k === 'again' && S.board) newGame(S.players, S.board);
