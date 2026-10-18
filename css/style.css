@@ -175,8 +175,20 @@ button.tile:active{transform:rotate(var(--rot)) scale(.93)}
 .flip{width:min(56vw,200px);aspect-ratio:1;perspective:900px;cursor:pointer}
 .flip-in{position:relative;width:100%;height:100%;transition:transform .6s;transform-style:preserve-3d}
 .flip.on .flip-in{transform:rotateY(180deg)}
-.flip .face{position:absolute;inset:0;width:100%;-webkit-backface-visibility:hidden;backface-visibility:hidden}
+.flip .face{position:absolute;inset:0;width:100%;-webkit-backface-visibility:hidden;backface-visibility:hidden;transition:visibility 0s .3s}
+/* Some browsers (notably Safari) still paint the front's layers mirrored through the back, so swap faces halfway through the turn */
+.flip .front{transform:translateZ(1px)}
+.flip.on .front,.flip:not(.on) .back{visibility:hidden}
 .flip .back{transform:rotateY(180deg);background:var(--soft);border:3px solid var(--rose);border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:10px}
+.learn{width:min(70vw,250px);background:var(--soft);border:3px solid var(--rose);border-radius:18px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 10px 14px}
+.learn .py{font-family:var(--f-text);font-size:34px;font-weight:600;color:var(--rose-deep);line-height:1.1}
+.learn .lz{font-family:var(--f-zi);font-size:96px;line-height:1.05;color:var(--ink)}
+.learn .ci{font-family:var(--f-zi);font-size:34px;color:var(--ink);line-height:1.2;margin-top:4px}
+.learn .ci b{color:var(--rose-deep);font-weight:400}
+.learn .cipy{font-family:var(--f-text);font-size:15px;color:var(--ink-soft)}
+.sheet .row .btn.big{flex:1;font-size:25px;padding:16px 18px;animation:nudge 1.6s ease-in-out .8s infinite}
+@keyframes nudge{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+@media (prefers-reduced-motion: reduce){.sheet .row .btn.big{animation:none}}
 .flip .back .py{font-family:var(--f-text);font-size:46px;font-weight:600;color:var(--rose-deep);line-height:1.1}
 .flip .back .ci{font-family:var(--f-zi);font-size:40px;color:var(--ink);line-height:1.2}
 .flip .back .ci b{color:var(--rose-deep);font-weight:400}
@@ -187,7 +199,7 @@ button.tile:active{transform:rotate(var(--rot)) scale(.93)}
 .switch i{position:absolute;top:4px;left:4px;width:26px;height:26px;border-radius:50%;background:var(--white);box-shadow:0 2px 3px rgba(46,42,74,.25);transition:left .2s}
 .switch.on{background:var(--rose)}
 .switch.on i{left:28px}
-@media (prefers-reduced-motion: reduce){.flip-in,.switch,.switch i{transition:none}}
+@media (prefers-reduced-motion: reduce){.flip-in,.flip .face,.switch,.switch i{transition:none}}
 .link{background:none;border:none;color:var(--ink-soft);font-family:var(--f-ui);font-size:17px;padding:6px 10px;cursor:pointer;text-decoration:underline;text-underline-offset:4px}
 .toast{position:fixed;left:50%;top:40%;z-index:60;transform:translate(-50%,-50%);background:var(--leaf);color:var(--white);font-size:30px;padding:16px 28px;border-radius:22px;box-shadow:0 5px 0 var(--leaf-deep);white-space:nowrap;animation:toastpop .26s cubic-bezier(.3,1.5,.6,1);pointer-events:none}
 #confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:70}

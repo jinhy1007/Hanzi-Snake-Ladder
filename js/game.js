@@ -257,11 +257,12 @@ async function card(o){
     ov.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${who}
       ${o.img ? art(o.img, 'cardpic') : o.emo ? `<div class="big-emo">${o.emo}</div>` : ''}
       ${o.title ? `<h3>${esc(o.title)}</h3>` : ''}
-      ${o.zi && o.hintP ? `<div class="flip" data-flip="1"><div class="flip-in"><div class="tzg face"><span>${esc(o.zi)}</span></div><div class="face back"></div></div></div>`
+      ${o.zi && o.hintP ? `<div class="flip" data-flip="1"><div class="flip-in"><div class="tzg face front"><span>${esc(o.zi)}</span></div><div class="face back"></div></div></div>`
+        : o.learn ? learnHTML(o.zi, o.learn)
         : o.zi ? `<div class="tzg"><span>${esc(o.zi)}</span></div>` : ''}
       ${o.text ? `<p>${esc(o.text)}</p>` : ''}
       ${o.hintP ? `<button type="button" class="btn soft hintbtn" data-hint="1" ${o.hintP.hints !== 0 ? '' : 'disabled'}>${hintLabel(o.hintP)}</button>` : ''}
-      <div class="row">${o.btns.map(([k, l, c]) => `<button type="button" class="btn ${c || ''}" data-k="${k}">${l}</button>`).join('')}</div>
+      <div class="row">${o.btns.map(([k, l, c]) => `<button type="button" class="btn ${c || (o.btns.length === 1 ? 'primary' : '')} ${o.btns.length === 1 ? 'big' : ''}" data-k="${k}">${l}</button>`).join('')}</div>
       ${o.speak && canSpeak ? '<button type="button" class="link" data-say="1">🔊 听读音</button>' : ''}</div>`;
     const shownAt = performance.now();
     let done = false;
@@ -303,6 +304,13 @@ async function hintData(ch){
   if (typeof HINTS !== 'undefined' && HINTS[ch]){ const [py, w, wpy] = HINTS[ch]; return { py, w, wpy }; }
   try { return { py: (await loadPinyin()).pinyin(ch) }; } catch (e) { return { py: '' }; }
 }
+// Shown after a missed character: pinyin, the character and a common word, so it sticks next time (never costs a hint).
+function hintBody(ch, d){
+  const word = d.w ? esc(d.w).split(esc(ch)).join(`<b>${esc(ch)}</b>`) : '';
+  return `<div class="py">${esc(d.py || '？')}</div>`
+    + (d.w ? `<div class="ci">${word}</div><div class="cipy">${esc(d.wpy)}</div>` : `<div class="cipy">${d.py ? '这个字还没有收录组词' : '拼音加载不出来，请检查网络'}</div>`);
+}
+const learnHTML = (ch, d) => `<div class="learn"><div class="py">${esc(d.py || '')}</div><div class="lz">${esc(ch)}</div>${d.w ? `<div class="ci">${esc(d.w).split(esc(ch)).join(`<b>${esc(ch)}</b>`)}</div><div class="cipy">${esc(d.wpy)}</div>` : ''}</div>`;
 // First tap spends one of the player's free hints and flips the card; after that the card flips back and forth for free.
 async function useHint(ov, o, fromBtn){
   const flip = ov.querySelector('.flip'), btn = ov.querySelector('.hintbtn'), p = o.hintP;
@@ -314,9 +322,7 @@ async function useHint(ov, o, fromBtn){
   if (!fromBtn || p.hints === 0 || flip.dataset.loading) return;
   flip.dataset.loading = '1'; if (p.hints > 0) p.hints--; saveG(); renderStatus(); sfx('magic');
   const d = await hintData(o.zi);
-  const word = d.w ? esc(d.w).split(esc(o.zi)).join(`<b>${esc(o.zi)}</b>`) : '';
-  flip.querySelector('.back').innerHTML = `<div class="py">${esc(d.py || '？')}</div>`
-    + (d.w ? `<div class="ci">${word}</div><div class="cipy">${esc(d.wpy)}</div>` : `<div class="cipy">${d.py ? '这个字还没有收录组词' : '拼音加载不出来，请检查网络'}</div>`);
+  flip.querySelector('.back').innerHTML = hintBody(o.zi, d);
   flip.dataset.shown = '1'; delete flip.dataset.loading;
   flip.classList.add('on'); btn.disabled = false; btn.textContent = '🔄 翻回汉字';
 }
@@ -660,7 +666,7 @@ async function readFlow(pi, cell){
   if (br) hint = `这一格有 ${G.board.bridges.indexOf(br) + 1} 号魔法门！读对这个字，再读对门另一头的字，就能穿过去。`;
   if (!(await readCard(p, cell.ch, hint))){
     sfx('bad');
-    await card({who:p, title:'没关系，记住它！', zi:cell.ch, text:p.prev === 0 ? '这次要回到森林出发点。' : `这次要回到第 ${p.prev} 格。`, speak:true, autoSay:true, btns:[['ok','好的']]});
+    await card({who:p, title:'没关系，记住它！', zi:cell.ch, learn: await hintData(cell.ch), text:p.prev === 0 ? '这次要回到森林出发点。' : `这次要回到第 ${p.prev} 格。`, speak:true, autoSay:true, btns:[['ok','记住了 👍']]});
     await jumpTo(pi, p.prev, 600); return false;
   }
   sfx('good');
@@ -677,7 +683,7 @@ async function readFlow(pi, cell){
       await jumpTo(pi, br.to, 900); return false;
     }
     sfx('bad');
-    await card({who:p, title:'差一点点！', zi:top.ch, text:'这次穿不过魔法门，留在原来这一格。', speak:true, autoSay:true, btns:[['ok','好的']]});
+    await card({who:p, title:'差一点点！', zi:top.ch, learn: await hintData(top.ch), text:'这次穿不过魔法门，留在原来这一格。', speak:true, autoSay:true, btns:[['ok','记住了 👍']]});
     scrollToCell(p.pos, true, true);
     return false;
   }
