@@ -12,6 +12,7 @@ js/hints.js           提示卡数据：常用 300 字的拼音和常用组词�
 images/maps/          地图背景：map-short、map-mid（森林城堡），map-long-sports（长棋盘：动物城运动会）
 images/props/         森林主题的道具卡片和角标；images/props/sports/ 是运动会主题的道具和从地图上裁的小图
 js/map-paths.js       长棋盘运动会地图上画出来的跑道中线（tools/build_sports.py 生成），格子沿着它摆
+images/avatars/       玩家头像：10 只原创混搭小神兽（tools/avatars.py 生成），表情和名字在 js/game.js 的 CREATURES 里
 tools/gen_art.py      用画图 API 生成上面这些图片的脚本
 ```
 

@@ -64,6 +64,16 @@ button{font-family:inherit;color:inherit}
 .prow input:focus,.inrow input:focus{border-color:var(--rose);outline:none}
 .x{width:40px;height:40px;flex:none;border-radius:12px;border:none;background:var(--soft);font-size:16px;cursor:pointer;color:var(--ink-soft)}
 .x:disabled{opacity:.3;cursor:default}
+.avimg{width:112%;height:112%;object-fit:contain;display:block;pointer-events:none;margin-top:-6%}
+.avbtn,.gwho .av,.mini,.token .face,.track .dot{overflow:hidden}
+.avpick{display:flex;flex-direction:column;gap:8px}
+.avcre{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;padding:8px;background:var(--soft);border-radius:16px}
+.avcre button{display:flex;flex-direction:column;align-items:center;gap:2px;border:none;border-radius:14px;background:var(--white);padding:6px 4px 8px;cursor:pointer;font-family:var(--f-ui);color:var(--ink)}
+.avcre button .avimg{width:64px;height:64px;margin:0}
+.avcre button b{font-weight:400;font-size:16px;line-height:1.2}
+.avcre button small{font-family:var(--f-text);font-size:11px;color:var(--ink-soft);line-height:1.2}
+.avcre button.on{outline:3px solid var(--ink)}
+.avcre button:disabled{opacity:.28;cursor:default}
 .avgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(46px,1fr));gap:6px;padding:8px;background:var(--soft);border-radius:16px}
 .avgrid button{font-size:27px;aspect-ratio:1;border-radius:12px;border:none;background:var(--white);cursor:pointer;padding:0}
 .avgrid button.on{outline:3px solid var(--ink)}

@@ -2,6 +2,16 @@
 /* ---------- data ---------- */
 const LIB300 = '一二三四五六七八九十百千万两半几人爸妈爷奶哥姐弟妹儿子女男孩家朋友老师生王公主宝口目耳手足头发牙眼鼻心身脚脸力日月天地山水火土石田风雨云雪电星光江河海林木花草树叶竹禾虹马牛羊鸟鱼虫猫狗鸡鸭猪兔龙虎象熊猴蛇羽毛红黄蓝绿白黑紫色彩金米饭面菜果瓜苹茶蛋糖汤吃喝饼豆肉门车船书本包衣服帽笔刀尺桌床灯球画字纸杯碗窗房玩上下左右前后里外中东西南北边国城路园桥年今明早晚午时候春夏秋冬夜节来去走跑跳飞坐站看见听说话读写唱歌笑哭开打拿放洗跟找买做给叫想爱要会能出进回到起用住大小多少长短高低远近快慢好坏新旧美丽冷热甜香真乐喜欢怕气学校课文问答名同我你他她它们的了是不在有和也都很吗呢吧这那什么谁哪个只没就还又再把对啊';
 const COLORS = ['#E2475B','#3B86E6','#2EAE70','#F0862A','#9A68DE','#DE4CA2'];
+// Creature avatars (art-src/avatars, tools/avatars.py): stored on players as 'c:<key>'; emoji avatars are stored as the emoji itself.
+const CREATURES = {
+  axolittle:{zh:'喵喵螈', en:'Axolo-meow'}, hippofly:{zh:'大嘴蝶', en:'Hippoflutter'}, seacoon:{zh:'小贼蜥', en:'Sneaky Lizcoon'},
+  dragoink:{zh:'喷火猪猪', en:'Dragoink'}, octowl:{zh:'八爪咕咕', en:'Octo-hoot'}, unicwhale:{zh:'独角鲸鲸', en:'Splashcorn'},
+  ladyfrog:{zh:'瓢瓢蛙', en:'Ladyhop'}, snoala:{zh:'慢吞吞', en:'Koalasnail'},
+  squirrot:{zh:'嘴硬鹦', en:'Nutty Polly'}, poodlephant:{zh:'嘟嘟卷', en:'Trunk-a-Doodle'}
+};
+const CREATURE_AVS = Object.keys(CREATURES).map(k => 'c:' + k);
+const creatureOf = a => typeof a === 'string' && a.startsWith('c:') ? CREATURES[a.slice(2)] : null;
+const avHTML = a => creatureOf(a) ? `<img class="avimg" src="images/avatars/${a.slice(2)}.webp" alt="${creatureOf(a).zh}" draggable="false">` : esc(a || '🙂');
 const AVATARS = ['👸','🧚‍♀️','🧜‍♀️','🤴','🐰','🐼','🐱','🐶','🦊','🐯','🐸','🐵','🐧','🐻','🐨','🦁','🐷','🐥','🐹','🦖'];
 const LIMITS = {dragon:[0,4], mush:[0,4], coach:[0,4], bridge:[0,5], uni:[0,8]};
 const LENS = [20, 28, 36];
@@ -234,7 +244,7 @@ const DEFAULT_COUNTS = {
 const HINT_CHOICES = [3, 6, 'inf'];
 const defaultCounts = len => ({...(DEFAULT_COUNTS[len] || DEFAULT_COUNTS[28])});
 function defaultSettings(){
-  const s = { players:[{name:'玩家1', avatar:'👸'}, {name:'玩家2', avatar:'🐰'}], lib:'c300', mine:{chars:[], hard:[], name:''}, len:28,
+  const s = { players:[{name:'喵喵螈', avatar:'c:axolittle'}, {name:'大嘴蝶', avatar:'c:hippofly'}], lib:'c300', mine:{chars:[], hard:[], name:''}, len:28,
     counts:defaultCounts(28), hints:true, hintN:3, mute:false, board:null, ver:SETTINGS_VER };
   return s;
 }
@@ -330,7 +340,7 @@ async function card(o){
   return new Promise(res => {
     const ov = document.createElement('div');
     ov.className = 'overlay';
-    const who = o.who ? `<div class="who"><span class="mini" style="--pc:${o.who.color}">${o.who.avatar}</span>${esc(o.who.name)}</div>` : '';
+    const who = o.who ? `<div class="who"><span class="mini" style="--pc:${o.who.color}">${avHTML(o.who.avatar)}</span>${esc(o.who.name)}</div>` : '';
     ov.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${who}
       ${o.img ? art(o.img, 'cardpic') : o.emo ? `<div class="big-emo">${o.emo}</div>` : ''}
       ${o.title ? `<h3>${esc(o.title)}</h3>` : ''}
@@ -428,11 +438,12 @@ function renderSetup(){
   const takenAv = S.players.map(p => p.avatar);
   const players = S.players.map((p, i) => `
     <div class="prow" style="--pc:${COLORS[i]}">
-      <button type="button" class="avbtn" data-act="pickav" data-i="${i}" aria-label="换头像">${p.avatar}</button>
+      <button type="button" class="avbtn" data-act="pickav" data-i="${i}" aria-label="换头像">${avHTML(p.avatar)}</button>
       <input id="pname-${i}" data-i="${i}" maxlength="8" value="${esc(p.name)}" aria-label="玩家${i + 1}的名字" autocomplete="off">
       <button type="button" class="x" data-act="delp" data-i="${i}" aria-label="去掉这个玩家" ${S.players.length <= 1 ? 'disabled' : ''}>✕</button>
     </div>
-    ${ui.openAv === i ? `<div class="avgrid">${AVATARS.map(a => `<button type="button" data-act="setav" data-i="${i}" data-av="${a}" class="${a === p.avatar ? 'on' : ''}" ${a !== p.avatar && takenAv.includes(a) ? 'disabled' : ''}>${a}</button>`).join('')}</div>` : ''}`).join('');
+    ${ui.openAv === i ? `<div class="avpick"><div class="avcre">${CREATURE_AVS.map(a => { const c = creatureOf(a); return `<button type="button" data-act="setav" data-i="${i}" data-av="${a}" class="${a === p.avatar ? 'on' : ''}" ${a !== p.avatar && takenAv.includes(a) ? 'disabled' : ''}>${avHTML(a)}<b>${c.zh}</b><small>${c.en}</small></button>`; }).join('')}</div>
+      <div class="avgrid">${AVATARS.map(a => `<button type="button" data-act="setav" data-i="${i}" data-av="${a}" class="${a === p.avatar ? 'on' : ''}" ${a !== p.avatar && takenAv.includes(a) ? 'disabled' : ''}>${a}</button>`).join('')}</div></div>` : ''}`).join('');
   const stepper = (k, label) => {
     const v = !b ? 0 : k === 'bridge' ? b.bridges.length : k === 'uni' ? b.cells.filter(c => c.uni).length : S.counts[k];
     return `<div class="step"><span class="nm">${label}</span><span class="ctl">
@@ -630,8 +641,8 @@ function renderGame(){
 function renderStatus(){
   const who = document.getElementById('gwho'); if (!who) return;
   const p = G.players[G.turn], last = lastIdx();
-  who.innerHTML = `<div class="av" style="--pc:${p.color}">${p.avatar}</div><div><div class="nm">轮到 ${esc(p.name)}${G.hintsOn ? `<span class="hl">💡${p.hints < 0 ? '∞' : p.hints}</span>` : ''}</div><div class="sub">${esc(G.msg || '点「掷骰子」往前走')}</div></div>`;
-  document.getElementById('rail').innerHTML = G.players.map((q, i) => `<span class="dot ${i === G.turn ? 'now' : ''}" style="--pc:${q.color};left:${(Math.min(q.pos, last) / last * 100).toFixed(1)}%" title="${esc(q.name)}">${q.skip ? '😴' : q.avatar}</span>`).join('');
+  who.innerHTML = `<div class="av" style="--pc:${p.color}">${avHTML(p.avatar)}</div><div><div class="nm">轮到 ${esc(p.name)}${G.hintsOn ? `<span class="hl">💡${p.hints < 0 ? '∞' : p.hints}</span>` : ''}</div><div class="sub">${esc(G.msg || '点「掷骰子」往前走')}</div></div>`;
+  document.getElementById('rail').innerHTML = G.players.map((q, i) => `<span class="dot ${i === G.turn ? 'now' : ''}" style="--pc:${q.color};left:${(Math.min(q.pos, last) / last * 100).toFixed(1)}%" title="${esc(q.name)}">${q.skip ? '😴' : avHTML(q.avatar)}</span>`).join('');
   const rb = document.getElementById('rollbtn'); if (rb) rb.disabled = busy || G.winner != null;
   placeTokens();
 }
@@ -640,7 +651,7 @@ function placeTokens(dur = 180){
   wrap.style.setProperty('--dur', dur + 'ms');
   if (wrap.children.length !== G.players.length){
     wrap.innerHTML = '';
-    G.players.forEach(p => { const t = document.createElement('div'); t.className = 'token'; t.style.setProperty('--pc', p.color); t.innerHTML = `<div class="face">${p.avatar}</div>`; wrap.appendChild(t); });
+    G.players.forEach(p => { const t = document.createElement('div'); t.className = 'token'; t.style.setProperty('--pc', p.color); t.innerHTML = `<div class="face">${avHTML(p.avatar)}</div>`; wrap.appendChild(t); });
   }
   const g = geo(G.board.cells.length), last = lastIdx(), groups = {};
   G.players.forEach((p, i) => { const k = Math.min(p.pos, last); (groups[k] = groups[k] || []).push(i); });
@@ -822,11 +833,17 @@ document.addEventListener('click', e => {
     case 'tile': openTile(i); return;
     case 'upload': document.getElementById('fileIn').click(); return;
     case 'pickav': ui.openAv = ui.openAv === i ? -1 : i; break;
-    case 'setav': S.players[i].avatar = b.dataset.av; ui.openAv = -1; break;
+    case 'setav': {
+      // picking a creature also names the player after it, unless the player already typed their own name
+      const pl = S.players[i], prev = creatureOf(pl.avatar), next = creatureOf(b.dataset.av);
+      if (next && (/^玩家\d+$/.test(pl.name) || (prev && pl.name === prev.zh) || !pl.name.trim())) pl.name = next.zh;
+      pl.avatar = b.dataset.av; ui.openAv = -1; break;
+    }
     case 'addp': {
       if (S.players.length >= 6) return;
       const used = S.players.map(p => p.avatar);
-      S.players.push({name:`玩家${S.players.length + 1}`, avatar: AVATARS.find(a => !used.includes(a))}); ui.openAv = -1; break;
+      const av = CREATURE_AVS.concat(AVATARS).find(a => !used.includes(a));
+      S.players.push({name: creatureOf(av) ? creatureOf(av).zh : `玩家${S.players.length + 1}`, avatar: av}); ui.openAv = -1; break;
     }
     case 'delp': if (S.players.length > 1){ S.players.splice(i, 1); ui.openAv = -1; } break;
     case 'lib': {
