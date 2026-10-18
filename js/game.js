@@ -21,7 +21,7 @@ function mulberry32(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; let t
 
 /* ---------- board logic ---------- */
 const DRAGON_ZONE = 2 / 3;  // dragons only appear in the first 2/3 of the path — meeting one near the castle is too discouraging
-const DOOR_MAX = 12;        // auto-placed magic doors: exit at most 12 cells after the entrance (players may move them further by hand)
+const DOOR_MAX = 6;         // auto-placed magic doors: exit at most 6 cells after the entrance (players may move them further by hand)
 function genBoard(chars, c, uniPref){
   const m = chars.length + c.dragon + c.mush + c.coach;
   const jlo = Math.min(2, m - 1), jhi = Math.max(jlo, m - 2);
