@@ -72,3 +72,10 @@ API key 也可以写在项目根目录的 `.env` 文件里（一行 `KIE_API_KEY
 来源：dragon、poison、unicorn、portal、castle、queue、cheer 用 Kie.ai 上的 Suno「生成声音」做（tools/sounds.py）；
 carriage 由两段生成结果拼接；splash、boing、glide、gust（Universfield / floraphonic）和 icecream、juice（freesound_community）
 来自 Pixabay 免费音效（Pixabay 内容许可，可免费商用、不需署名）。截取和转码用 tools/trim_sound.py（需要 macOS 的 afconvert）。
+
+## 英文版
+
+设置页和游戏页右上角小喇叭前面的「EN / 中文」按钮切换语言，选择会保存。英文模式下说明、规则、事件卡、道具、提示按钮、状态栏都是英文；
+汉字卡、拼音和组词、读音仍是中文。小神兽玩家如果用的是默认名字，会显示英文名（比如 喵喵螈 → Axolo-meow）。
+文字都在 js/game.js：主题文字在 THEMES 的 t（中文）和 en（英文），其他地方用 L('中文', 'English')。
+英文字体：标题和按钮 Fredoka，说明文字 Andika（为初学认字的孩子设计），见 css/style.css 的 html[lang="en"]。

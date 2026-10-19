@@ -13,6 +13,12 @@
   --f-text:"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
   color-scheme:light;
 }
+/* English mode: round, friendly Fredoka for titles and buttons, Andika (made for beginning readers) for text.
+   Chinese fonts stay as fallbacks so any Chinese words in English mode still render nicely. */
+html[lang="en"]{
+  --f-ui:"Fredoka","ZCOOL KuaiLe","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  --f-text:"Andika","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+}
 *{box-sizing:border-box}
 html,body{min-height:100%}
 body{
@@ -32,6 +38,8 @@ button{font-family:inherit;color:inherit}
 .logo{margin:0;font-weight:400;font-size:30px;letter-spacing:3px;color:var(--rose-deep);text-wrap:balance}
 .logo small{display:block;font-size:13px;letter-spacing:1px;color:var(--ink-soft);font-family:var(--f-text);margin-top:2px}
 .icon-btn{width:44px;height:44px;flex:none;border-radius:14px;border:none;background:var(--card);box-shadow:0 3px 0 var(--line);font-size:20px;cursor:pointer;padding:0}
+.topbtns{display:flex;gap:8px;flex:none}
+.icon-btn.lang{width:auto;min-width:44px;padding:0 10px;font-family:var(--f-ui);font-size:17px;color:var(--ink)}
 .icon-btn:active{transform:translateY(2px);box-shadow:0 1px 0 var(--line)}
 
 .btn{font-family:var(--f-ui);font-size:20px;border:none;border-radius:16px;padding:12px 16px;background:var(--card);color:var(--ink);box-shadow:0 4px 0 var(--line);cursor:pointer;transition:transform .08s,box-shadow .08s;min-height:52px}
