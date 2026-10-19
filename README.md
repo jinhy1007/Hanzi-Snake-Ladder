@@ -13,6 +13,7 @@ images/maps/          地图背景：map-short、map-mid（森林城堡），map
 images/props/         森林主题的道具卡片和角标；images/props/sports/ 是运动会主题的道具和从地图上裁的小图
 js/map-paths.js       长棋盘运动会地图上画出来的跑道中线（tools/build_sports.py 生成），格子沿着它摆
 images/avatars/       玩家头像：10 只原创混搭小神兽（tools/avatars.py 生成），表情和名字在 js/game.js 的 CREATURES 里
+sounds/               事件卡和道具的音效（m4a）；js/game.js 里 SOUND_FILES 和每个主题的 sfx 决定哪张卡用哪个，加载失败时退回代码合成的声音
 tools/gen_art.py      用画图 API 生成上面这些图片的脚本
 ```
 
@@ -55,3 +56,19 @@ API key 也可以写在项目根目录的 `.env` 文件里（一行 `KIE_API_KEY
 自己上传的字库里如果有不在这 300 个字里的字，提示卡会临时加载 pinyin-pro，只显示拼音。
 
 更新 css/js 文件后，把 `index.html` 里的 `?v=` 数字加一，手机和电脑上就不会用到旧的缓存文件。
+
+## 音效
+
+| 卡片 | 森林城堡 | 动物城运动会 |
+|---|---|---|
+| 回起点 | dragon（恶龙喷火、怪叫逃跑） | splash（落水） |
+| 停一轮 / 休息一轮 | poison（肚子咕咕叫） | icecream（冰淇淋车，关卡片时淡出）/ queue（排队） |
+| 往前两格 | carriage（魔法棒＋马蹄） | boing（弹簧） |
+| 读对飞三格 | unicorn | juice（吸管） |
+| 读对两个字跳过去 | portal | glide（wee～） |
+| 第二个字没读出来 | gust（失望喇叭） | gust |
+| 获胜 | castle（号角＋烟花） | cheer（庆祝音乐＋小动物欢呼） |
+
+来源：dragon、poison、unicorn、portal、castle、queue、cheer 用 Kie.ai 上的 Suno「生成声音」做（tools/sounds.py）；
+carriage 由两段生成结果拼接；splash、boing、glide、gust（Universfield / floraphonic）和 icecream、juice（freesound_community）
+来自 Pixabay 免费音效（Pixabay 内容许可，可免费商用、不需署名）。截取和转码用 tools/trim_sound.py（需要 macOS 的 afconvert）。

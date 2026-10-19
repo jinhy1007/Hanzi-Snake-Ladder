@@ -84,6 +84,7 @@ const bridgeEnds = b => new Set(b.bridges.flatMap(l => [l.from, l.to]));
 // uni = read for +3, bridge/portal/door = read two characters to jump); only the story around them changes.
 const THEMES = {
   forest: {
+    sfx: { dragon:'file:dragon', mush:'file:poison', skip:'file:poison', coach:'file:carriage', uni:'file:unicorn', door:'file:portal', doorFail:'file:gust', win:'file:castle' },
     art: { dragon:'images/props/dragon.webp', mush:'images/props/mush.webp', coach:'images/props/coach.webp',
       unicorn:'images/props/unicorn.webp', portal:'images/props/door-open.webp', door:'images/props/door-closed.webp',
       start:'images/props/forest.webp', end:'images/props/castle.webp', win:'images/props/castle.webp' },
@@ -110,7 +111,7 @@ const THEMES = {
     art: { dragon:'images/props/sports/splash.webp', mush:'images/props/sports/icecream.webp', coach:'images/props/sports/trampoline.webp',
       unicorn:'images/props/sports/juice.webp', portal:'images/props/sports/glide-up.webp', door:'images/props/sports/glide-down.webp',
       start:'images/props/sports/start.webp', end:'images/props/sports/finish.webp', win:'images/props/sports/podium.webp' },
-    dragonSfx: 'splash',
+    sfx: { dragon:'file:splash', mush:'file:icecream', skip:'file:queue', coach:'file:boing', uni:'file:juice', door:'file:glide', doorFail:'file:gust', win:'file:cheer' },
     t: { dragon:'掉河里', mush:'冰淇淋车', coach:'蹦床', coachS:'蹦床', uni:'能量果汁', door:'滑翔伞', from:'起飞点', to:'降落点', end:'终点',
       subtitle:'从起跑线出发，读着汉字冲过终点', toTop:'往上滑能看到终点。',
       ruleGoal:'大家轮流掷骰子，从起跑线出发，谁先冲过终点谁就赢。',
@@ -285,6 +286,7 @@ function unlockAudio(){
   const a = ac(); if (!a) return;
   if (!unlockedAudio){
     try { const src = a.createBufferSource(); src.buffer = a.createBuffer(1, 1, 22050); src.connect(a.destination); src.start(0); unlockedAudio = true; } catch (e) {}
+    Object.keys(SOUND_FILES).forEach(loadSound);
     // older iPhones (no navigator.audioSession): a playing <audio> element switches the page out of "silent switch" mode
     if (!navigator.audioSession && /iP(hone|ad|od)|Macintosh/.test(navigator.userAgent) && 'ontouchend' in document){
       try {
@@ -302,8 +304,65 @@ function tone(f, t0, dur, type, vol){
   g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(vol || .12, t + .012); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
   o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + dur + .03);
 }
+/* little synth helpers (no audio files: every effect is generated) */
+function glide(f0, f1, t0, dur, type, vol, vib){
+  const a = AC, t = a.currentTime + t0, o = a.createOscillator(), g = a.createGain();
+  o.type = type || 'sine'; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+  if (vib){ const l = a.createOscillator(), lg = a.createGain(); l.frequency.value = vib[0]; lg.gain.value = vib[1]; l.connect(lg); lg.connect(o.frequency); l.start(t); l.stop(t + dur + .05); }
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(vol || .1, t + .02); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + dur + .05);
+}
+function noise(t0, dur, o){
+  // filtered white noise; o = {type, f0, f1, q, vol, attack}
+  const a = AC, t = a.currentTime + t0, len = Math.ceil(a.sampleRate * dur), buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const src = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+  src.buffer = buf; f.type = o.type || 'bandpass'; f.Q.value = o.q || 1;
+  f.frequency.setValueAtTime(o.f0 || 1000, t); if (o.f1) f.frequency.exponentialRampToValueAtTime(o.f1, t + dur);
+  const at = o.attack == null ? .01 : o.attack;
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(o.vol || .3, t + at); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  src.connect(f); f.connect(g); g.connect(a.destination); src.start(t); src.stop(t + dur + .05);
+}
+const notes = (list, gap, dur, type, vol, t0 = 0) => list.forEach((f, i) => f && tone(f, t0 + i * gap, dur, type, vol));
+// Recorded sound effects (sounds/, made with tools/sounds.py). sfx('file:<name>') plays one; if it can't load, the synth fallback plays.
+const SOUND_FILES = {
+  dragon: {src:'sounds/dragon.m4a', fallback:'roar'}, queue: {src:'sounds/queue.m4a', fallback:'queue'},
+  castle: {src:'sounds/castle.m4a', fallback:'fanfare'}, poison: {src:'sounds/poison.m4a', fallback:'poison'},
+  carriage: {src:'sounds/carriage.m4a', fallback:'gallop'}, unicorn: {src:'sounds/unicorn.m4a', fallback:'sparkle'},
+  portal: {src:'sounds/portal.m4a', fallback:'portal'},
+  splash: {src:'sounds/splash.m4a', fallback:'splash'}, boing: {src:'sounds/boing.m4a', fallback:'boing'},
+  icecream: {src:'sounds/icecream.m4a', fallback:'jingle', stopOnClose:true}, juice: {src:'sounds/juice.m4a', fallback:'juice'},
+  glide: {src:'sounds/glide.m4a', fallback:'glide'}, gust: {src:'sounds/gust.m4a', fallback:'gust'},
+  cheer: {src:'sounds/cheer.m4a', fallback:'cheer'}
+};
+const soundBufs = {};
+function loadSound(name){
+  if (!soundBufs[name]) soundBufs[name] = fetch(SOUND_FILES[name].src).then(r => r.arrayBuffer())
+    .then(b => new Promise((res, rej) => AC.decodeAudioData(b, res, rej))).catch(() => null);
+  return soundBufs[name];
+}
+// Long sounds (stopOnClose) fade out when the card that is showing gets closed.
+let cardSounds = [], cardSoundGen = 0;
+function playFile(name){
+  const long = SOUND_FILES[name].stopOnClose, gen = cardSoundGen;
+  loadSound(name).then(buf => {
+    if (long && gen !== cardSoundGen) return;          // the card was already closed while loading
+    if (!buf){ sfx(SOUND_FILES[name].fallback); return; }
+    const src = AC.createBufferSource(), g = AC.createGain(); g.gain.value = .9;
+    src.buffer = buf; src.connect(g); g.connect(AC.destination); src.start();
+    if (long) cardSounds.push({src, g});
+  });
+}
+function fadeCardSounds(sec = .5){
+  cardSoundGen++;
+  if (!AC) return;
+  const t = AC.currentTime;
+  cardSounds.forEach(({src, g}) => { try { g.gain.setValueAtTime(g.gain.value, t); g.gain.linearRampToValueAtTime(0, t + sec); src.stop(t + sec + .05); } catch (e) {} });
+  cardSounds = [];
+}
 function sfx(k){
   if (S.mute) return;
+  if (k.startsWith('file:')){ if (ac()) playFile(k.slice(5)); return; }
   const a = ac(); if (!a) return;
   try {
     if (k === 'tick') tone(650 + Math.random() * 350, 0, .045, 'square', .035);
@@ -320,6 +379,65 @@ function sfx(k){
       const src = a.createBufferSource(), bp = a.createBiquadFilter(), g = a.createGain();
       src.buffer = buf; bp.type = 'bandpass'; bp.frequency.setValueAtTime(1800, a.currentTime + .22); bp.frequency.exponentialRampToValueAtTime(350, a.currentTime + .8);
       g.gain.value = .5; src.connect(bp); bp.connect(g); g.connect(a.destination); src.start(a.currentTime + .22);
+    }
+    else if (k === 'flip'){         // 提示卡翻面: card swish + soft chime
+      noise(0, .22, {f0:1500, f1:5000, q:1.2, vol:.18, attack:.04}); notes([1319, 1760], .08, .35, 'sine', .05, .18);
+    }
+    // ---- forest & castle ----
+    else if (k === 'poison'){       // 毒蘑菇: three sick little bubbles, then a woozy slide down
+      [0, .12, .24].forEach((t, i) => glide(300 + i * 60, 600 + i * 80, t, .09, 'sine', .08));
+      glide(520, 140, .38, .75, 'triangle', .1, [7, 25]);
+    }
+    else if (k === 'snore'){        // 休息一轮: snore in, whistle out
+      noise(0, .7, {type:'lowpass', f0:300, f1:500, q:3, vol:.45, attack:.3}); glide(160, 120, 0, .7, 'sawtooth', .05);
+      glide(900, 1400, .85, .45, 'sine', .08);
+    }
+    else if (k === 'gallop'){       // 南瓜马车: clip-clop hooves, then a magic chime
+      [0, .11, .3, .41, .6, .71].forEach((t, i) => { noise(t, .05, {f0: i % 2 ? 2600 : 1900, q:8, vol:.35, attack:.002}); tone(i % 2 ? 700 : 520, t, .05, 'square', .03); });
+      notes([1047, 1319, 1568, 2093], .07, .3, 'sine', .07, .85);
+    }
+    else if (k === 'sparkle'){      // 独角兽: harp glissando up + shimmer
+      notes([523, 659, 784, 988, 1175, 1319, 1568, 1976, 2349], .045, .35, 'triangle', .07);
+      [0, .08, .16, .24].forEach(t => tone(2637 + Math.random() * 800, .45 + t, .2, 'sine', .04));
+    }
+    else if (k === 'portal'){       // 魔法门: rising whoosh through the door + chord
+      noise(0, .9, {f0:300, f1:4000, q:2, vol:.25, attack:.4}); glide(220, 880, 0, .9, 'sine', .06, [6, 12]);
+      notes([784, 988, 1175], 0, .6, 'sine', .06, .85);
+    }
+    else if (k === 'doorShut'){     // 魔法门没打开: creak, then a thump
+      glide(180, 120, 0, .5, 'sawtooth', .03, [30, 20]); noise(.5, .25, {type:'lowpass', f0:220, q:1, vol:.6, attack:.003});
+      tone(80, .5, .25, 'sine', .15);
+    }
+    else if (k === 'fanfare'){      // 到达城堡: trumpet fanfare + bells
+      notes([523, 0, 523, 659, 784, 0, 659, 784], .11, .2, 'sawtooth', .08);
+      notes([1047, 1319, 1568, 2093], .16, .8, 'sine', .06, .95);
+    }
+    // ---- animal-city sports day ----
+    else if (k === 'jingle'){       // 冰淇淋车: music-box ice-cream truck tune
+      notes([784, 659, 784, 1047, 988, 784, 880, 784, 659, 523], .14, .16, 'triangle', .09);
+      notes([1568, 1319, 1568, 2093], .28, .12, 'sine', .03, .02);
+    }
+    else if (k === 'queue'){        // 还在排队: tick-tock waiting, then a sigh
+      [0, .25, .5, .75].forEach((t, i) => noise(t, .04, {f0: i % 2 ? 1800 : 2600, q:6, vol:.5, attack:.002}));
+      glide(600, 330, 1.0, .5, 'sine', .07);
+    }
+    else if (k === 'boing'){        // 蹦床: spring boing twice
+      glide(150, 700, 0, .32, 'sine', .14, [18, 40]); glide(180, 900, .38, .38, 'sine', .12, [18, 50]);
+    }
+    else if (k === 'juice'){        // 能量果汁: slurp, then power-up arpeggio
+      noise(0, .45, {f0:900, f1:2200, q:4, vol:.6, attack:.05}); glide(500, 900, 0, .4, 'triangle', .06, [25, 60]);
+      notes([523, 659, 784, 1047, 1319, 1568], .05, .16, 'square', .06, .5);
+    }
+    else if (k === 'glide'){        // 滑翔伞起飞: wind swells up + a happy "wheee" whistle
+      noise(0, 1.2, {f0:500, f1:1800, q:.8, vol:.2, attack:.5}); glide(700, 1800, .2, .9, 'sine', .07, [5, 30]);
+    }
+    else if (k === 'gust'){         // 风太大了: gust of wind blowing down
+      noise(0, .9, {f0:1500, f1:300, q:.7, vol:.28, attack:.15}); glide(500, 200, .1, .7, 'sine', .04, [8, 20]);
+    }
+    else if (k === 'cheer'){        // 冲过终点: referee whistle, crowd cheer, fanfare
+      [0, .12, .24].forEach(t => glide(2800, 2600, t, .1, 'sine', .08, [40, 120]));
+      noise(.35, 1.6, {f0:1200, q:.5, vol:.25, attack:.35}); noise(.45, 1.4, {f0:2400, q:.8, vol:.12, attack:.3});
+      notes([523, 659, 784, 1047], .12, .3, 'triangle', .1, .4);
     }
     else if (k === 'roar'){
       const len = a.sampleRate * .7, buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0);
@@ -378,7 +496,7 @@ async function card(o){
       ${o.speak && canSpeak ? '<button type="button" class="link" data-say="1">🔊 听读音</button>' : ''}</div>`;
     const shownAt = performance.now();
     let done = false;
-    const finish = k => { if (done) return; done = true; touch(); ov.remove(); res(k); };
+    const finish = k => { if (done) return; done = true; touch(); fadeCardSounds(); ov.remove(); res(k); };
     const pick = e => {
       let b = e.target && e.target.closest ? e.target.closest('button') : null;
       if (!b && e.clientX != null){
@@ -432,7 +550,7 @@ async function useHint(ov, o, fromBtn){
     btn.textContent = on ? '🔄 翻回汉字' : '💡 再看一下提示'; return;
   }
   if (!fromBtn || p.hints === 0 || flip.dataset.loading) return;
-  flip.dataset.loading = '1'; if (p.hints > 0) p.hints--; saveG(); renderStatus(); sfx('magic');
+  flip.dataset.loading = '1'; if (p.hints > 0) p.hints--; saveG(); renderStatus(); sfx('flip');
   const d = await hintData(o.zi);
   flip.querySelector('.back').innerHTML = hintBody(o.zi, d);
   flip.dataset.shown = '1'; delete flip.dataset.loading;
@@ -751,19 +869,19 @@ async function turnFlow(){
 async function resolve(pi){
   const p = G.players[pi], cell = G.board.cells[p.pos], last = lastIdx();
   if (cell.t === 'dragon'){
-    sfx(TH.dragonSfx || 'roar'); const mp = document.getElementById('map'); mp.classList.remove('boom'); void mp.offsetWidth; mp.classList.add('boom');
+    sfx(TH.sfx.dragon); const mp = document.getElementById('map'); mp.classList.remove('boom'); void mp.offsetWidth; mp.classList.add('boom');
     const o = TH.t.dragonCard(p.name);
     await card({who:p, img:'dragon', title:o.title, text:o.text, btns:[['ok',o.btn,'bad']]});
     await jumpTo(pi, 0, 900); return false;
   }
   if (cell.t === 'mush'){
-    sfx('bad');
+    sfx(TH.sfx.mush);
     const o = TH.t.mushCard(p.name);
     await card({who:p, img:'mush', title:o.title, text:o.text, btns:[['ok',o.btn]]});
     p.skip = true; return false;
   }
   if (cell.t === 'coach'){
-    sfx('magic');
+    sfx(TH.sfx.coach);
     const o = TH.t.coachCard;
     await card({who:p, img:'coach', title:o.title, text:o.text, btns:[['ok',o.btn,'primary']]});
     await stepTo(pi, Math.min(p.pos + 2, last)); return p.pos >= last;
@@ -786,22 +904,21 @@ async function readFlow(pi, cell){
     await card({who:p, title:'没关系，记住它！', zi:cell.ch, learn: await hintData(cell.ch), text:p.prev === 0 ? TH.t.backHome : `这次要回到第 ${p.prev} 格。`, speak:true, autoSay:true, btns:[['ok','Okay']]});
     await jumpTo(pi, p.prev, 600); return false;
   }
-  sfx('good');
+  sfx(cell.uni ? TH.sfx.uni : 'good');
   if (cell.uni){
     const o = TH.t.uniCard;
     await card({who:p, img:'unicorn', title:o.title, text:o.text, btns:[['ok',o.btn,'primary']]});
-    sfx('magic');
     await stepTo(pi, Math.min(p.pos + 3, last)); return p.pos >= last;
   }
   if (br){
     const top = G.board.cells[br.to];
     if (await readCard(p, top.ch, TH.t.doorHint2(G.board.bridges.indexOf(br) + 1, br.to))){
-      sfx('magic');
+      sfx(TH.sfx.door);
       const o = TH.t.doorCard(p.name, br.to);
       await card({who:p, img:'portal', title:o.title, text:o.text, btns:[['ok',o.btn,'primary']]});
       await jumpTo(pi, br.to, 900); return false;
     }
-    sfx('bad');
+    sfx(TH.sfx.doorFail);
     await card({who:p, title:TH.t.doorFail.title, zi:top.ch, learn: await hintData(top.ch), text:TH.t.doorFail.text, speak:true, autoSay:true, btns:[['ok','Okay']]});
     scrollToCell(p.pos, true, true);
     return false;
@@ -817,6 +934,7 @@ async function nextTurn(){
     const q = G.players[G.turn];
     q.skip = false; renderStatus(); saveG(); scrollToCell(q.pos, true, true);
     const o = TH.t.skipCard(q.name);
+    sfx(TH.sfx.skip);
     await card({who:q, img:'mush', title:o.title, text:o.text, btns:[['ok',o.btn]]});
     G.turn = (G.turn + 1) % n;
   }
@@ -828,7 +946,7 @@ async function win(pi){
   const p = G.players[pi];
   p.pos = lastIdx();
   G.winner = pi; G.active = false; G.msg = TH.t.winMsg(p.name);
-  saveG(); renderStatus(); scrollToCell(p.pos, true, true); sfx('win'); confetti();
+  saveG(); renderStatus(); scrollToCell(p.pos, true, true); sfx(TH.sfx.win); confetti();
   const wc = TH.t.winCard(p.name);
   const k = await card({who:p, img:'win', title:wc.title, text:wc.text, btns:[['setup','🏠 返回主页','home big'],['again','🎲 再玩一局','primary big']]});
   busy = false;
