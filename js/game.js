@@ -973,13 +973,19 @@ function renderProgress(){
         <div class="nums"><div><i class="dot m"></i>${L('已掌握', 'Mastered')} <b>${sm.m}</b></div><div><i class="dot l"></i>${L('正在学', 'Learning')} <b>${sm.l}</b></div>
           <div><i class="dot n"></i>${L('还没见过', 'Not seen yet')} <b>${sm.n}</b></div>${sm.f ? `<div><i class="dot f"></i>${L(`其中牢牢记住 <b>${sm.f}</b> 🏅`, `<b>${sm.f}</b> fully learned 🏅`)}</div>` : ''}${dueN ? `<div>🔁 ${L(`该复习 <b>${dueN}</b> 个`, `<b>${dueN}</b> due for review`)}</div>` : ''}${weekNew ? `<div>${L(`这周新学会 <b>${weekNew}</b> 个 🎉`, `<b>${weekNew}</b> new this week 🎉`)}</div>` : ''}</div>
       </div>
-      <div class="zgrid">${chars.map(c => `<button type="button" class="${cls(c)}" data-act="progz" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div>
-      <p class="note">${L(`点一个字可以听读音、看组词。不用提示读对 ${MASTER_OK} 次就算掌握（这局已经有人读过的字不算）。掌握的字过 3 天、1 周、3 周、2 个月会回来复习，都读对就是 🏅 牢牢记住；读错就重新学。`, `Tap a character to hear it and see a word. Read right ${MASTER_OK} times without a hint = mastered (not counting characters someone already read out that game). Mastered characters come back for review after 3 days, 1 week, 3 weeks and 2 months — pass them all for 🏅 fully learned; a miss means learning it again.`)}</p>
-    </section>
-    ${recent.length || hard.length ? `<section class="panel">
+      <ul class="prules">
+        <li><span>⭐</span><span>${L(`<b>掌握</b>：不用提示读对 ${MASTER_OK} 次。每局只算第一次读，这局已经有人读过的字不算。`, `<b>Mastered</b>: read right ${MASTER_OK} times without a hint. Only the first reading in a game counts — not after someone else read it out.`)}</span></li>
+        <li><span>🔁</span><span>${L('<b>复习</b>：掌握后过 3 天、1 周、3 周、2 个月会再出现在棋盘上。', '<b>Review</b>: mastered characters come back after 3 days, 1 week, 3 weeks and 2 months.')}</span></li>
+        <li><span>🏅</span><span>${L('<b>牢牢记住</b>：复习都读对，就不再出现。', '<b>Fully learned</b>: pass every review and it stops coming back.')}</span></li>
+        <li><span>↩️</span><span>${L('<b>读错了</b>：回到「正在学」，重新开始。', '<b>Missed</b>: back to "learning" to start again.')}</span></li>
+      </ul>
       ${recent.length ? `<h2>⭐ ${L('最近学会', 'Recently mastered')}</h2><div class="zchips">${recent.map(zchip).join('')}</div>` : ''}
-      ${hard.length ? `<h2>💪 ${L('常读错，多练练', 'Often missed — keep practising')}</h2><div class="zchips">${hard.map(([c, r]) => `<button type="button" data-act="progz" data-v="${esc(c)}">${esc(c)}<small>${L(`错 ${r.miss} 次`, `${r.miss}× missed`)}</small></button>`).join('')}</div>` : ''}
-    </section>` : ''}
+    </section>
+    <section class="panel"><h2>${L(`全部 ${chars.length} 个字`, `All ${chars.length} characters`)}</h2>
+      <p class="note">${L('点一个字可以听读音、看组词和读过几次。', 'Tap a character to hear it, see a word and its history.')}</p>
+      <div class="zgrid">${chars.map(c => `<button type="button" class="${cls(c)}" data-act="progz" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+    </section>
+    ${hard.length ? `<section class="panel"><h2>💪 ${L('常读错，多练练', 'Often missed — keep practising')}</h2><div class="zchips">${hard.map(([c, r]) => `<button type="button" data-act="progz" data-v="${esc(c)}">${esc(c)}<small>${L(`错 ${r.miss} 次`, `${r.miss}× missed`)}</small></button>`).join('')}</div></section>` : ''}
     <footer class="foot"><p>${L('进度只保存在这台设备的这个浏览器里。', 'Progress is saved only in this browser on this device.')}</p>
       <div class="row"><button type="button" class="link" data-act="lrename">✏️ ${L('改名字', 'Rename')}</button><button type="button" class="link" data-act="ldelete">🗑️ ${L('删除这个学习者', 'Delete this learner')}</button></div></footer>`;
 }
@@ -1119,7 +1125,7 @@ if (STATS_CODE && !LOCAL){
 function track(name){
   try { if (STATS_CODE && !LOCAL && window.goatcounter && window.goatcounter.count) window.goatcounter.count({path: name, title: name, event: true}); } catch (e) {}
 }
-const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v51'].join(' · ');
+const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v52'].join(' · ');
 function openFeedback(){
   track('feedback');
   const ov = document.createElement('div'); ov.className = 'overlay';

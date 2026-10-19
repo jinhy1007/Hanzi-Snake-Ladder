@@ -328,3 +328,5 @@ button.tile:active{transform:rotate(var(--rot)) scale(.93)}
 .zchips small{font-family:var(--f-text);font-size:11px;color:var(--red-deep);margin-left:4px}
 .foot .row{display:flex;justify-content:center;gap:8px;margin-top:6px}
 .dot.f,.zgrid .f{background:#3FB873}.zgrid .f{color:#fff}
+.prules{list-style:none;margin:0 0 12px;padding:10px 12px;background:var(--soft);border-radius:14px;display:flex;flex-direction:column;gap:6px;font-family:var(--f-text);font-size:13.5px;line-height:1.5;color:var(--ink-soft)}
+.prules li{display:flex;gap:8px}.prules b{color:var(--ink)}
