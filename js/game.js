@@ -602,8 +602,18 @@ function loadPinyin(){
   });
 }
 async function hintData(ch){
-  if (typeof HINTS !== 'undefined' && HINTS[ch]){ const [py, w, wpy] = HINTS[ch]; return { py, w, wpy }; }
-  try { return { py: (await loadPinyin()).pinyin(ch) }; } catch (e) { return { py: '' }; }
+  const mine = S.lib === 'mine' && S.mine.info && S.mine.info[ch];
+  const base = typeof HINTS !== 'undefined' && HINTS[ch] ? { py: HINTS[ch][0], w: HINTS[ch][1], wpy: HINTS[ch][2] } : {};
+  if (!mine && base.py) return base;
+  const d = { py: mine && mine.py || base.py || '', w: mine && mine.w || base.w || '', wpy: mine && mine.w ? '' : base.wpy || '' };
+  if (!d.py || (d.w && !d.wpy)){
+    try {
+      const P = await loadPinyin();
+      if (!d.py) d.py = P.pinyin(ch);
+      if (d.w && !d.wpy) d.wpy = P.pinyin(d.w);                  // whole word gives pinyin-pro context for polyphones
+    } catch (e) {}
+  }
+  return d;
 }
 // Shown after a missed character: pinyin, the character and a common word, so it sticks next time (never costs a hint).
 function hintBody(ch, d){
@@ -611,7 +621,7 @@ function hintBody(ch, d){
   return `<div class="py">${esc(d.py || '？')}</div>`
     + (d.w ? `<div class="ci">${word}</div><div class="cipy">${esc(d.wpy)}</div>` : `<div class="cipy">${d.py ? L('这个字还没有收录组词', 'No example word yet') : L('拼音加载不出来，请检查网络', 'Couldn\'t load pinyin — check the internet')}</div>`);
 }
-const learnHTML = (ch, d) => `<div class="learn"><div class="py">${esc(d.py || '')}</div><div class="lz">${esc(ch)}</div>${d.w ? `<div class="ci">${esc(d.w).split(esc(ch)).join(`<b>${esc(ch)}</b>`)}</div><div class="cipy">${esc(d.wpy)}</div>` : ''}</div>`;
+const learnHTML = (ch, d) => `<div class="learn"><div class="py">${esc(d.py || '')}</div><div class="lz">${esc(ch)}</div>${d.w ? `<div class="ci">${esc(d.w).split(esc(ch)).join(`<b>${esc(ch)}</b>`)}</div><div class="cipy">${esc(d.wpy || '')}</div>` : ''}</div>`;
 // First tap spends one of the player's free hints and flips the card; after that the card flips back and forth for free.
 async function useHint(ov, o, fromBtn){
   const flip = ov.querySelector('.flip'), btn = ov.querySelector('.hintbtn'), p = o.hintP;
@@ -674,7 +684,7 @@ function renderSetup(){
       </div>
       ${S.lib === 'mine' ? `
         <div class="row"><button type="button" class="btn soft" data-act="upload">📄 ${L('上传 Excel', 'Upload Excel')}</button><button type="button" class="btn soft" data-act="paste">✏️ ${L('粘贴汉字', 'Paste characters')}</button></div>
-        <p class="note">${L(`表格第一列写汉字，一格一个字或一个词都可以。想优先放${t.uni}的难字，在第二列写「难」。也支持 CSV 文件。`, `Put the characters in the first column — one character or word per cell. To put the ${t.uni} on tricky characters first, write 「难」 or "hard" in the second column. CSV files work too.`)}${hardN ? L(`<br>已标出 ${hardN} 个难字。`, `<br>${hardN} tricky characters marked.`) : ''}</p>
+        <p class="note">${L(`点「上传 Excel」可以先下载表格模板：汉字一列必填，拼音和组词可以不填，难字写「难」会优先放${t.uni}。`, `Tap "Upload Excel" to get a template first: fill in the characters; pinyin and words are optional; mark tricky ones 「难」 to put the ${t.uni} there first.`)}${hardN ? L(`<br>已标出 ${hardN} 个难字。`, `<br>${hardN} tricky characters marked.`) : ''}</p>
         ${ui.pasting ? `<textarea id="pasteIn" aria-label="${L('粘贴汉字', 'Paste characters')}" placeholder="${L('把要练的汉字粘贴到这里', 'Paste the characters to practise here')}">${esc((S.mine.chars || []).join(''))}</textarea>
           <div class="row"><button type="button" class="btn" data-act="pastecancel">${L('取消', 'Cancel')}</button><button type="button" class="btn primary" data-act="pastesave">${L('保存字库', 'Save list')}</button></div>` : ''}` : ''}
       ${ui.libErr ? `<p class="err">${esc(ui.libErr)}</p>` : ''}${ui.libMsg ? `<p class="ok">${esc(ui.libMsg)}</p>` : ''}
@@ -793,28 +803,46 @@ function loadXLSX(){
     document.head.appendChild(s);
   });
 }
+// Columns are found by their header (汉字 / 拼音 / 组词 / 难字, or English); files without a recognised header
+// keep the old layout: characters in column 1, "难" in column 2.
+const COL_PATTERNS = { ch: /^(汉字|生字|字|字词|词语|词|characters?|chinese|hanzi)/i, py: /^(拼音|pinyin)/i,
+  w: /^(组词|词组|例词|words?|example)/i, hard: /^(难|难字|hard|tricky)/i };
 function rowsToLib(rows){
-  const chars = [], hard = new Set();
+  const chars = [], hard = new Set(), info = {};
+  const cell = (r, i) => i < 0 || r[i] == null ? '' : String(r[i]).replace(/^﻿/, '').trim();
+  const head = (rows[0] || []).map((v, i) => cell(rows[0], i));
+  const col = k => head.findIndex(h => COL_PATTERNS[k].test(h));
+  const hasHead = col('ch') >= 0 || col('py') >= 0 || col('w') >= 0;
+  const C = hasHead ? { ch: Math.max(0, col('ch')), py: col('py'), w: col('w'), hard: col('hard') } : { ch: 0, py: -1, w: -1, hard: 1 };
   rows.forEach((r, ri) => {
-    const a = String(r[0] == null ? '' : r[0]).replace(/^\uFEFF/, '').trim();
-    if (ri === 0 && /^(汉字|生字|字|字词|词语|词|characters?|chinese|hanzi)$/i.test(a)) return;
-    const cs = hanOf(a), h = /难|独角兽|果汁|hard|★|\*/i.test(String(r[1] == null ? '' : r[1]));
-    cs.forEach(c => { chars.push(c); if (h) hard.add(c); });
+    if (hasHead && ri === 0) return;
+    const cs = hanOf(cell(r, C.ch)); if (!cs.length) return;
+    const h = /难|独角兽|果汁|hard|★|\*/i.test(cell(r, C.hard));
+    const py = cell(r, C.py).replace(/\s+/g, ' '), w = hanOf(cell(r, C.w)).join('');
+    cs.forEach(c => {
+      chars.push(c); if (h) hard.add(c);
+      const e = {};
+      if (py && cs.length === 1) e.py = py;                       // pinyin only makes sense for a single character
+      if (w && w.includes(c)) e.w = w; else if (!w && cs.length > 1) e.w = cs.join('');   // a word cell is its own example word
+      if (Object.keys(e).length) info[c] = Object.assign(info[c] || {}, e);
+    });
   });
   let u = uniq(chars);
   if (!u.length) u = uniq(rows.flatMap(r => r.flatMap(v => hanOf(v == null ? '' : v))));
-  return { chars: u.slice(0, 1000), hard: [...hard].filter(c => u.includes(c)) };
+  return { chars: u.slice(0, 1000), hard: [...hard].filter(c => u.includes(c)), info };
 }
 /* upload help: show the expected layout, offer a ready-made template, then pick the file */
-const TEMPLATE_ROWS = [['大', ''], ['小', ''], ['山', ''], ['水', ''], ['火', '难'], ['朋友', ''], ['花', ''], ['鸟', '难'], ['鱼', ''], ['书', '']];
-const templateHead = () => [L('汉字', 'Characters'), L('难字（写「难」）', 'Hard? (write 难 or hard)'), L('备注（可以不填）', 'Notes (optional)')];
+// [character, pinyin, word, hard]
+const TEMPLATE_ROWS = [['大', '', '', ''], ['小', '', '', ''], ['山', '', '', ''], ['熊', 'xióng', '熊猫', ''], ['乐', 'yuè', '音乐', ''],
+  ['跳', '', '跳绳', '难'], ['朋友', '', '', ''], ['花', '', '', ''], ['鸟', '', '', '难'], ['鱼', '', '', '']];
+const templateHead = () => [L('汉字', 'Characters'), L('拼音（可以不填）', 'Pinyin (optional)'), L('组词（可以不填）', 'Word (optional)'), L('难字（写「难」）', 'Hard? (write 难 or hard)')];
 async function downloadTemplate(){
-  const rows = [templateHead(), ...TEMPLATE_ROWS.map(([c, h]) => [c, h, c === '朋友' ? L('一格可以写一个词', 'A cell can hold a word') : ''])];
+  const rows = [templateHead(), ...TEMPLATE_ROWS];
   const name = L('识字蛇形棋-字库模板', 'hanzi-character-list-template');
   let blob, file;
   try {
     const X = await loadXLSX(); const ws = X.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{wch: 12}, {wch: 22}, {wch: 24}];
+    ws['!cols'] = [{wch: 12}, {wch: 18}, {wch: 18}, {wch: 22}];
     const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, L('字库', 'Characters'));
     blob = new Blob([X.write(wb, {type:'array', bookType:'xlsx'})], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     file = name + '.xlsx';
@@ -833,13 +861,14 @@ function openUploadHelp(){
     <h3>${L('上传我的字库', 'Upload my characters')}</h3>
     <ol class="steps-l">
       <li>${L('先下载表格模板', 'Download the template')}</li>
-      <li>${L('用 Excel、Numbers 或 WPS 打开，把要练的字填在第一列（一格一个字或一个词）', 'Open it in Excel, Numbers or Google Sheets and put the characters in the first column (one character or word per cell)')}</li>
-      <li>${L(`想让${t.uni}优先放在某个字上，就在第二列写「难」`, `To put the ${t.uni} on a tricky character first, write 难 or "hard" in the second column`)}</li>
+      <li>${L('用 Excel、Numbers 或 WPS 打开，把要练的字填在「汉字」这一列（一格一个字或一个词）', 'Open it in Excel, Numbers or Google Sheets and put the characters in the "Characters" column (one character or word per cell)')}</li>
+      <li>${L('「拼音」和「组词」可以不填：填了就显示在提示卡背面；不填会自动查拼音。多音字可以用拼音指定读音', '"Pinyin" and "Word" are optional: if filled, they show on the back of the hint card; if empty, pinyin is looked up automatically. Use pinyin to choose the reading of a character with several readings')}</li>
+      <li>${L(`想让${t.uni}优先放在某个字上，就在「难字」这一列写「难」`, `To put the ${t.uni} on a tricky character first, write 难 or "hard" in the "Hard?" column`)}</li>
       <li>${L('保存后点「选择文件上传」', 'Save it, then tap "Choose file"')}</li>
     </ol>
     <table class="tpl"><thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
-      <tbody>${TEMPLATE_ROWS.slice(3, 7).map(([c, h]) => `<tr><td class="zi">${c}</td><td>${h}</td><td>${c === '朋友' ? L('一格可以写一个词', 'A cell can hold a word') : ''}</td></tr>`).join('')}
-      <tr><td colspan="3" class="more">……</td></tr></tbody></table>
+      <tbody>${TEMPLATE_ROWS.slice(2, 7).map(([c, py, w, h]) => `<tr><td class="zi">${c}</td><td>${py}</td><td class="zi sm">${w}</td><td>${h}</td></tr>`).join('')}
+      <tr><td colspan="4" class="more">……</td></tr></tbody></table>
     <p class="note">${L('至少要有 8 个字，最多 1000 个。也可以上传 CSV 文件。', 'At least 8 characters, up to 1000. CSV files work too.')}</p>
     <div class="row"><button type="button" class="btn soft" data-u="tpl">📥 ${L('下载模板', 'Download template')}</button>
       <button type="button" class="btn primary" data-u="pick">📤 ${L('选择文件上传', 'Choose file')}</button></div>
@@ -867,7 +896,7 @@ async function handleFile(file){
     const lib = rowsToLib(rows);
     if (lib.chars.length < 8){ ui.libMsg = ''; ui.libErr = L(`表格里只找到 ${lib.chars.length} 个汉字，至少要 8 个。请检查第一列。`, `Only found ${lib.chars.length} characters — need at least 8. Please check the first column.`); }
     else {
-      S.mine = { chars: lib.chars, hard: lib.hard, name: file.name.replace(/\.[^.]+$/, '') };
+      S.mine = { chars: lib.chars, hard: lib.hard, info: lib.info, name: file.name.replace(/\.[^.]+$/, '') };
       S.lib = 'mine'; drawBoard(); saveS();
       ui.libMsg = L(`读到 ${lib.chars.length} 个字${lib.hard.length ? `，其中 ${lib.hard.length} 个难字` : ''}，棋盘已经重新抽好。`, `Read ${lib.chars.length} characters${lib.hard.length ? ` (${lib.hard.length} tricky)` : ''} — new board ready.`);
     }

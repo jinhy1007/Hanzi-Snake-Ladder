@@ -204,6 +204,8 @@ button.tile:active{transform:rotate(var(--rot)) scale(.93)}
 .tpl th{background:#2e8f55;color:#fff;font-weight:600;padding:6px;text-align:left}
 .tpl td{border-top:1px solid var(--line);padding:5px 6px;color:var(--ink-soft)}
 .tpl td.zi{font-family:var(--f-zi);font-size:20px;color:var(--ink)}
+.tpl td.zi.sm{font-size:16px}
+.tpl th{font-size:12px}
 .tpl td.more{text-align:center;color:var(--ink-soft)}
 .sheet.upl .row .btn{flex:1;font-size:17px}
 .sheet.upl .link{align-self:center}
