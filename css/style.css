@@ -197,6 +197,16 @@ button.tile:active{transform:rotate(var(--rot)) scale(.93)}
 .tzg span{position:relative;z-index:1;font-family:var(--f-zi);font-size:140px;font-size:74cqw;line-height:1;color:var(--ink)}
 .sheet .row .btn{font-size:21px}
 .inrow{display:flex;gap:8px;width:100%}
+.sheet.upl{text-align:left;align-items:stretch}
+.sheet.upl h3{text-align:center}
+.steps-l{margin:0;padding-left:22px;font-family:var(--f-text);font-size:15px;line-height:1.55;color:var(--ink)}
+.tpl{width:100%;border-collapse:collapse;font-family:var(--f-text);font-size:13px;background:var(--white);border-radius:10px;overflow:hidden}
+.tpl th{background:#2e8f55;color:#fff;font-weight:600;padding:6px;text-align:left}
+.tpl td{border-top:1px solid var(--line);padding:5px 6px;color:var(--ink-soft)}
+.tpl td.zi{font-family:var(--f-zi);font-size:20px;color:var(--ink)}
+.tpl td.more{text-align:center;color:var(--ink-soft)}
+.sheet.upl .row .btn{flex:1;font-size:17px}
+.sheet.upl .link{align-self:center}
 .doors{width:100%;display:flex;flex-direction:column;gap:8px;padding-top:4px;border-top:2px dashed var(--line)}
 .doors .dh{font-size:17px;color:var(--ink-soft)}
 .drow{display:flex;gap:8px;align-items:center}

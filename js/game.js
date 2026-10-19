@@ -796,8 +796,8 @@ function loadXLSX(){
 function rowsToLib(rows){
   const chars = [], hard = new Set();
   rows.forEach((r, ri) => {
-    const a = String(r[0] == null ? '' : r[0]).trim();
-    if (ri === 0 && /^(汉字|生字|字|字词|词语|词)$/.test(a)) return;
+    const a = String(r[0] == null ? '' : r[0]).replace(/^\uFEFF/, '').trim();
+    if (ri === 0 && /^(汉字|生字|字|字词|词语|词|characters?|chinese|hanzi)$/i.test(a)) return;
     const cs = hanOf(a), h = /难|独角兽|果汁|hard|★|\*/i.test(String(r[1] == null ? '' : r[1]));
     cs.forEach(c => { chars.push(c); if (h) hard.add(c); });
   });
@@ -805,12 +805,59 @@ function rowsToLib(rows){
   if (!u.length) u = uniq(rows.flatMap(r => r.flatMap(v => hanOf(v == null ? '' : v))));
   return { chars: u.slice(0, 1000), hard: [...hard].filter(c => u.includes(c)) };
 }
+/* upload help: show the expected layout, offer a ready-made template, then pick the file */
+const TEMPLATE_ROWS = [['大', ''], ['小', ''], ['山', ''], ['水', ''], ['火', '难'], ['朋友', ''], ['花', ''], ['鸟', '难'], ['鱼', ''], ['书', '']];
+const templateHead = () => [L('汉字', 'Characters'), L('难字（写「难」）', 'Hard? (write 难 or hard)'), L('备注（可以不填）', 'Notes (optional)')];
+async function downloadTemplate(){
+  const rows = [templateHead(), ...TEMPLATE_ROWS.map(([c, h]) => [c, h, c === '朋友' ? L('一格可以写一个词', 'A cell can hold a word') : ''])];
+  const name = L('识字蛇形棋-字库模板', 'hanzi-character-list-template');
+  let blob, file;
+  try {
+    const X = await loadXLSX(); const ws = X.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{wch: 12}, {wch: 22}, {wch: 24}];
+    const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, L('字库', 'Characters'));
+    blob = new Blob([X.write(wb, {type:'array', bookType:'xlsx'})], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    file = name + '.xlsx';
+  } catch (e) {   // spreadsheet library didn't load: a CSV with BOM still opens in Excel
+    blob = new Blob(['\uFEFF' + rows.map(r => r.join(',')).join('\r\n')], {type:'text/csv;charset=utf-8'}); file = name + '.csv';
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+function openUploadHelp(){
+  // no board yet (empty list): pick the theme from the chosen length, about 8 item spaces on top of the characters
+  const th = S.board ? themeOf(S.board) : THEMES[mapFor(S.len + 8).theme] || THEMES.forest, t = EN() ? th.en : th.t;
+  const ov = document.createElement('div'); ov.className = 'overlay';
+  const head = templateHead();
+  ov.innerHTML = `<div class="sheet upl" role="dialog" aria-modal="true">
+    <h3>${L('上传我的字库', 'Upload my characters')}</h3>
+    <ol class="steps-l">
+      <li>${L('先下载表格模板', 'Download the template')}</li>
+      <li>${L('用 Excel、Numbers 或 WPS 打开，把要练的字填在第一列（一格一个字或一个词）', 'Open it in Excel, Numbers or Google Sheets and put the characters in the first column (one character or word per cell)')}</li>
+      <li>${L(`想让${t.uni}优先放在某个字上，就在第二列写「难」`, `To put the ${t.uni} on a tricky character first, write 难 or "hard" in the second column`)}</li>
+      <li>${L('保存后点「选择文件上传」', 'Save it, then tap "Choose file"')}</li>
+    </ol>
+    <table class="tpl"><thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${TEMPLATE_ROWS.slice(3, 7).map(([c, h]) => `<tr><td class="zi">${c}</td><td>${h}</td><td>${c === '朋友' ? L('一格可以写一个词', 'A cell can hold a word') : ''}</td></tr>`).join('')}
+      <tr><td colspan="3" class="more">……</td></tr></tbody></table>
+    <p class="note">${L('至少要有 8 个字，最多 1000 个。也可以上传 CSV 文件。', 'At least 8 characters, up to 1000. CSV files work too.')}</p>
+    <div class="row"><button type="button" class="btn soft" data-u="tpl">📥 ${L('下载模板', 'Download template')}</button>
+      <button type="button" class="btn primary" data-u="pick">📤 ${L('选择文件上传', 'Choose file')}</button></div>
+    <button type="button" class="link" data-u="close">${L('取消', 'Cancel')}</button></div>`;
+  ov.addEventListener('click', e => {
+    const b = e.target.closest('[data-u]'); if (!b) return;
+    if (b.dataset.u === 'tpl') downloadTemplate();
+    else if (b.dataset.u === 'pick'){ ov.remove(); document.getElementById('fileIn').click(); }
+    else ov.remove();
+  });
+  document.body.appendChild(ov);
+}
 async function handleFile(file){
   ui.libErr = ''; ui.libMsg = L('正在读取……', 'Reading…'); rerenderSetupKeepScroll();
   try {
     let rows;
     if (/\.(csv|txt)$/i.test(file.name)){
-      const text = await file.text();
+      const text = (await file.text()).replace(/^\uFEFF/, '');
       rows = text.split(/\r?\n/).map(l => l.split(/[,\t，]/));
     } else {
       const X = await loadXLSX();
@@ -1058,7 +1105,7 @@ document.addEventListener('click', e => {
     case 'resume': screen = 'game'; render(); return;
     case 'start': if (S.board) newGame(S.players, S.board); return;
     case 'tile': openTile(i); return;
-    case 'upload': document.getElementById('fileIn').click(); return;
+    case 'upload': openUploadHelp(); return;
     case 'pickav': ui.openAv = ui.openAv === i ? -1 : i; break;
     case 'setav': {
       // picking a creature also names the player after it, unless the player already typed their own name
