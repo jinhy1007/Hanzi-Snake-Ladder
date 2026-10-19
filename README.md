@@ -84,6 +84,24 @@ carriage 由两段生成结果拼接；splash、boing、glide、gust（Universfi
 ## 汉字发音
 
 1000 个内置字的发音都是一个小女孩的声音（Kie.ai 上的 Gemini 3.1 Flash 配音，每个字单独生成，多音字按 js/hints.js 的拼音读），
-存在 sounds/zi/<字的 Unicode 码位>.m4a（比如「水」是 6c34.m4a），一共约 3.5 MB。
+存在 sounds/zi/<字的 Unicode 码位>.m4a（比如「水」是 6c34.m4a），一共约 12 MB。
 生成：tools/voices.py --all（已有的会跳过）；后期处理（去静音、统一音量、转码）：tools/voices_post.py。
 不在这 1000 个里的字（比如上传的字库）用设备自带的语音。
+
+## 意见反馈和访问统计
+
+- **意见反馈**：设置页右上角 💬 和页面底部「意见反馈」打开 Tally 表单（https://tally.so/r/PRjZ5x），
+  玩家不用注册，可以上传一个截图或视频（每个文件最大 10 MB）。反馈在 Tally 后台看，新反馈会发邮件通知。
+  表单的隐藏字段 `info` 由游戏自动填写：语言 · 字库 · 棋盘格数 · 手机/电脑 · 版本。
+- **访问统计**：GoatCounter，后台 https://shizifun.goatcounter.com 。不用 cookie，不收集个人信息。
+  本地预览（127.0.0.1 / localhost）不统计。除了页面访问，还记录这些事件：
+
+  | 事件 | 意思 |
+  |---|---|
+  | start/c300/28 | 开始一局（字库 c300/c500/c1000/mine，棋盘 20/28/36 格） |
+  | win/again、win/home | 有人走到终点后，选了「再玩一局」或「返回主页」 |
+  | lang/en、lang/zh | 切换语言 |
+  | mylist/upload | 上传了自己的字库表格 |
+  | feedback | 打开了意见反馈 |
+
+- 链接和代码在 js/game.js 的 `FEEDBACK_URL`、`STATS_CODE`，换成别的表单或统计账号改这两行就行。

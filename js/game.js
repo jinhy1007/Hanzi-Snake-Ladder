@@ -684,8 +684,8 @@ function renderSetup(){
   const libPanel = `
     <section class="panel"><h2>${L('选字库', 'Character list')}</h2>
       <div class="choices">
-        <div role="button" tabindex="0" class="choice ${S.lib !== 'mine' ? 'on' : ''}" data-act="lib" data-v="${S.common}"><b class="libsel"><select id="libSize" aria-label="${L('常用字字库', 'Common characters list')}">
-          ${COMMON.map(k => `<option value="${k}" ${S.common === k ? 'selected' : ''}>${L(`常用 ${k.slice(1)} 字`, `${k.slice(1)} common characters`)}</option>`).join('')}</select></b>
+        <div role="button" tabindex="0" class="choice ${S.lib !== 'mine' ? 'on' : ''}" data-act="lib" data-v="${S.common}"><b>${L('常用字', 'Common characters')}</b><span class="libsel"><select id="libSize" aria-label="${L('常用字字库', 'Common characters list')}">
+          ${COMMON.map(k => `<option value="${k}" ${S.common === k ? 'selected' : ''}>${L(`${k.slice(1)} 字`, `${k.slice(1)} characters`)}</option>`).join('')}</select></span>
           <span>${{c300: L('适合刚开始认字的小朋友', 'Great for kids just starting to read'), c500: L('认识一些字以后，再多学 200 个', 'Know a few already? 200 more to learn'),
             c1000: L('认字比较多的小朋友来挑战', 'A challenge for confident readers')}[S.common]}</span></div>
         <button type="button" class="choice ${S.lib === 'mine' ? 'on' : ''}" data-act="lib" data-v="mine"><b>${L('我的字库', 'My characters')}</b><span>${mineN ? `${L(`${mineN} 个字`, `${mineN} characters`)}${S.mine.name ? ' · ' + esc(S.mine.name) : ''}` : L('上传表格或粘贴汉字', 'Upload a spreadsheet or paste characters')}</span></button>
@@ -702,7 +702,7 @@ function renderSetup(){
     </section>`;
   app.innerHTML = `
     <header class="top"><h1 class="logo">${L('识字蛇形棋', 'Hanzi Snakes & Ladders')}<small>${t.subtitle}</small></h1>
-      <span class="topbtns">${langBtn()}<button type="button" class="icon-btn" data-act="mute" aria-label="${L('声音开关', 'Sound on/off')}">${S.mute ? '🔇' : '🔊'}</button></span></header>
+      <span class="topbtns"><button type="button" class="icon-btn" data-act="feedback" aria-label="${L('意见反馈', 'Feedback')}" title="${L('意见反馈', 'Feedback')}">💬</button>${langBtn()}<button type="button" class="icon-btn" data-act="mute" aria-label="${L('声音开关', 'Sound on/off')}">${S.mute ? '🔇' : '🔊'}</button></span></header>
     ${G && G.active ? `<button type="button" class="btn primary wide" data-act="resume">▶ ${L('继续上一局', 'Continue last game')}</button>` : ''}
     <section class="panel"><h2>${L('谁来玩？', 'Who\'s playing?')}</h2>
       <p class="note">${L('点头像可以换一个喜欢的人物。', 'Tap an avatar to pick your favourite creature.')}</p>
@@ -734,7 +734,9 @@ function renderSetup(){
         <li><span>${art('portal','ico')}</span><span>${t.ruleDoor}</span></li>
         ${S.hints ? `<li><span>💡</span><span>${L(`提示卡：${hintDesc(S.hintN)}，不认识的字可以翻开卡片看拼音和组词。`, `Hint cards: ${hintDesc(S.hintN)} — flip the card to see the pinyin and a word.`)}</span></li>` : ''}
       </ul>
-    </section>`;
+    </section>
+    <footer class="foot"><button type="button" class="link" data-act="feedback">💬 ${L('意见反馈', 'Send feedback')}</button>
+      <p>${L('本网站只统计匿名的访问次数，不收集个人信息。', 'We only count anonymous visits — no personal information is collected.')}</p></footer>`;
 }
 
 function rerenderSetupKeepScroll(){
@@ -860,6 +862,40 @@ async function downloadTemplate(){
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
+/* ---------- feedback (Tally form) & anonymous stats (GoatCounter) ---------- */
+const FEEDBACK_URL = 'https://tally.so/r/PRjZ5x';   // Tally form link, e.g. https://tally.so/r/abc123 (the form has a hidden field "info")
+const STATS_CODE = 'shizifun';     // GoatCounter site code: stats at https://<code>.goatcounter.com
+const LOCAL = /^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname);   // local previews are never counted
+if (STATS_CODE && !LOCAL){
+  const sc = document.createElement('script'); sc.async = true; sc.src = 'https://gc.zgo.at/count.js';
+  sc.dataset.goatcounter = `https://${STATS_CODE}.goatcounter.com/count`; document.head.appendChild(sc);
+}
+// Events show up in GoatCounter as paths like "start/c500/28"; no names or other personal data are sent.
+function track(name){
+  try { if (STATS_CODE && !LOCAL && window.goatcounter && window.goatcounter.count) window.goatcounter.count({path: name, title: name, event: true}); } catch (e) {}
+}
+const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v43'].join(' · ');
+function openFeedback(){
+  track('feedback');
+  const ov = document.createElement('div'); ov.className = 'overlay';
+  ov.innerHTML = `<div class="sheet upl" role="dialog" aria-modal="true">
+    <h3>💬 ${L('意见反馈', 'Feedback')}</h3>
+    <p>${L('谢谢你玩识字蛇形棋！欢迎告诉我们：', 'Thanks for playing! We\'d love to hear:')}</p>
+    <ul class="steps-l">
+      <li>${L('喜欢什么，哪里不好玩，想要什么新功能', 'What you like, what\'s not fun, and what you\'d like added')}</li>
+      <li>${L('遇到问题的话，可以附上截图或录屏', 'Found a problem? You can attach a screenshot or screen recording')}</li>
+      <li>${L('想收到回复，可以留下联系方式（可以不填）', 'Leave a way to reach you if you\'d like a reply (optional)')}</li>
+    </ul>
+    <p class="note">${L('会在新页面打开一个反馈表，不用注册。', 'A feedback form opens in a new page — no sign-up needed.')}</p>
+    <div class="row"><button type="button" class="btn soft" data-u="close">${L('取消', 'Cancel')}</button>
+      <button type="button" class="btn primary" data-u="go" ${FEEDBACK_URL ? '' : 'disabled'}>✍️ ${L('去写反馈', 'Write feedback')}</button></div></div>`;
+  ov.addEventListener('click', e => {
+    const b = e.target.closest('[data-u]'); if (!b && e.target !== ov) return;
+    if (b && b.dataset.u === 'go') window.open(`${FEEDBACK_URL}?info=${encodeURIComponent(feedbackInfo())}`, '_blank', 'noopener');
+    ov.remove();
+  });
+  document.body.appendChild(ov);
+}
 function openUploadHelp(){
   // no board yet (empty list): pick the theme from the chosen length, about 8 item spaces on top of the characters
   const th = S.board ? themeOf(S.board) : THEMES[mapFor(S.len + 8).theme] || THEMES.forest, t = EN() ? th.en : th.t;
@@ -905,7 +941,7 @@ async function handleFile(file){
     if (lib.chars.length < 8){ ui.libMsg = ''; ui.libErr = L(`表格里只找到 ${lib.chars.length} 个汉字，至少要 8 个。请检查第一列。`, `Only found ${lib.chars.length} characters — need at least 8. Please check the first column.`); }
     else {
       S.mine = { chars: lib.chars, hard: lib.hard, info: lib.info, name: file.name.replace(/\.[^.]+$/, '') };
-      S.lib = 'mine'; drawBoard(); saveS();
+      S.lib = 'mine'; drawBoard(); saveS(); track('mylist/upload');
       ui.libMsg = L(`读到 ${lib.chars.length} 个字${lib.hard.length ? `，其中 ${lib.hard.length} 个难字` : ''}，棋盘已经重新抽好。`, `Read ${lib.chars.length} characters${lib.hard.length ? ` (${lib.hard.length} tricky)` : ''} — new board ready.`);
     }
   } catch (e) {
@@ -1118,6 +1154,7 @@ async function win(pi){
   const k = await card({who:p, img:'win', title:wc.title, text:wc.text, btns:[['setup',L('🏠 返回主页', '🏠 Home'),'home big'],['again',L('🎲 再玩一局', '🎲 Play again'),'primary big']]});
   busy = false;
   drawBoard(); saveS();  // every new game gets fresh characters and freshly placed props, unicorns and doors
+  track(k === 'again' ? 'win/again' : 'win/home');
   if (k === 'again' && S.board) newGame(S.players, S.board);
   else { screen = 'setup'; render(); window.scrollTo(0, 0); }
 }
@@ -1136,14 +1173,15 @@ document.addEventListener('click', e => {
   const act = b.dataset.act, i = +b.dataset.i;
   ac();
   switch (act){
-    case 'lang': S.lang = EN() ? 'zh' : 'en'; saveS(); document.documentElement.lang = EN() ? 'en' : 'zh-CN'; render(); return;
+    case 'lang': S.lang = EN() ? 'zh' : 'en'; track(`lang/${S.lang}`); saveS(); document.documentElement.lang = EN() ? 'en' : 'zh-CN'; render(); return;
     case 'mute': S.mute = !S.mute; saveS(); b.textContent = S.mute ? '🔇' : '🔊'; return;
     case 'roll': onRoll(); return;
     case 'home': if (busy) return; screen = 'setup'; render(); window.scrollTo(0, 0); return;
     case 'resume': screen = 'game'; render(); return;
-    case 'start': if (S.board) newGame(S.players, S.board); return;
+    case 'start': if (S.board){ track(`start/${S.lib}/${S.len}`); newGame(S.players, S.board); } return;
     case 'tile': openTile(i); return;
     case 'upload': openUploadHelp(); return;
+    case 'feedback': openFeedback(); return;
     case 'pickav': ui.openAv = ui.openAv === i ? -1 : i; break;
     case 'setav': {
       // picking a creature also names the player after it, unless the player already typed their own name
