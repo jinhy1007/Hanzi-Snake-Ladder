@@ -301,6 +301,7 @@ function defaultSettings(){
 let S = load(KEY_S);
 if (!S || !Array.isArray(S.players) || !S.players.length || !S.counts || !S.mine) S = defaultSettings();
 if (S.hints === undefined) S.hints = true;
+if (S.check !== 'parent') S.check = 'voice';   // who judges the reading: 'voice' (the game listens) or 'parent'
 // emoji avatars were removed: give those players a free creature (and its name, if they kept the default name)
 S.players.forEach(p => {
   if (creatureOf(p.avatar)) return;
@@ -329,8 +330,9 @@ let busy = false;
 let AC = null;
 // Phones only allow sound after a tap, and iPhone Safari mutes Web Audio when the ring/silent switch is on.
 // So: ask for "playback" audio (Safari 16.4+), and on every tap create/resume the AudioContext and play a tiny silent sound.
+let micBusy = false;   // true while listening: leave the audio session alone so the microphone works (iPhone)
 function ac(){
-  try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch (e) {}
+  try { if (!micBusy && navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch (e) {}
   if (!AC){ try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; } }
   if (AC && AC.state !== 'running') AC.resume().catch(() => {});
   return AC;
@@ -538,6 +540,86 @@ function speak(t){
   } catch (e) {}
 }
 
+/* ---------- listening: the game hears the player read (Web Speech API; tested in lab/voice-test.html) ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const canListen = !!SR && window.isSecureContext;
+let voiceBroken = false;   // voiceBroken: mic or recognition failed this session → parents judge instead
+const useVoice = () => canListen && !voiceBroken && S.check !== 'parent';
+const DIGITS = {'0':'零','1':'一','2':'二','3':'三','4':'四','5':'五','6':'六','7':'七','8':'八','9':'九','10':'十','100':'百','1000':'千','10000':'万'};
+const noTone = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ü/g, 'v').toLowerCase();
+// Sounds recognizers (and many grown-ups) mix up: zh/z, ch/c, sh/s, n/l, -ng/-n. A mix-up counts as "almost", not wrong.
+const nearSound = s => noTone(s).replace(/^([zcs])h/, '$1').replace(/^l/, 'n').replace(/ng$/, 'n');
+// Generous on purpose: any of the recognizer's guesses may match. Same character or a same-sounding character → 'ok';
+// right syllable but another tone → 'half'; anything else → 'bad'.
+function judgeReading(ch, py, P, alts){
+  const heard = [];
+  for (const a of alts){
+    const cs = a.replace(/\d+/g, d => DIGITS[d] || d).match(/\p{Script=Han}/gu) || [];
+    const pys = P && cs.length ? P.pinyin(cs.join(''), {type:'array'}) : [];
+    cs.forEach((c, i) => heard.push({c, py: pys[i] || ''}));
+  }
+  if (heard.some(h => h.c === ch) || (py && heard.some(h => h.py === py))) return 'ok';
+  if (py && heard.some(h => h.py && nearSound(h.py) === nearSound(py))) return 'half';
+  return 'bad';
+}
+// Chrome decides by itself when the reader has stopped, and steady background noise (a fan, a fridge) keeps it waiting.
+// So on Chrome/Edge we also watch the microphone level: once a voice was heard and it has been quiet for 0.6 s, stop
+// (Chrome then gives its answer right away). Not on iPhone/iPad, where opening the mic twice can upset the audio, and
+// not needed on Safari, which stops quickly by itself.
+const useVAD = !/iPhone|iPad|iPod/.test(navigator.userAgent) && !(navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent))
+  && /Chrome|Chromium|Edg\//.test(navigator.userAgent);
+async function voiceWatch(onQuiet){
+  let st, ctx, raf, stopped = false;
+  try {
+    st = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}});
+    ctx = new (window.AudioContext || window.webkitAudioContext)(); await ctx.resume();
+    const an = ctx.createAnalyser(); an.fftSize = 1024; ctx.createMediaStreamSource(st).connect(an);
+    const buf = new Float32Array(an.fftSize), t0 = performance.now();
+    let floor = 1, voiced = 0, quietSince = 0, last = t0;
+    (function tick(){
+      if (stopped) return;
+      an.getFloatTimeDomainData(buf); let sum = 0; for (const v of buf) sum += v * v;
+      const rms = Math.sqrt(sum / buf.length), now = performance.now(), dt = now - last; last = now;
+      if (now - t0 < 300) floor = Math.min(floor, rms);                  // first 0.3 s: the room's own noise level
+      else if (rms < floor * 1.5) floor = floor * 0.95 + rms * 0.05;     // then follow the room's noise slowly
+      const loud = rms > Math.max(floor * 3, 0.012);
+      if (loud){ voiced += dt; quietSince = 0; }
+      else if (voiced > 120){ quietSince = quietSince || now; if (now - quietSince > 600){ onQuiet(); return; } }
+      raf = requestAnimationFrame(tick);
+    })();
+  } catch (e) {}
+  return () => { stopped = true; cancelAnimationFrame(raf); try { st && st.getTracks().forEach(t => t.stop()); } catch (e) {} try { ctx && ctx.close(); } catch (e) {} };
+}
+// Listen once for `ch`. Resolves {v, alts} or {err}. onStop receives a function that stops listening early.
+async function listenFor(ch, onStop){
+  const [P, d] = await Promise.all([loadPinyin().catch(() => null), hintData(ch)]);
+  const py = d.py || '';
+  return new Promise(res => {
+    let rec, done = false, partial = [], stopT = null;
+    let unwatch = null, spoke = false;
+    const end = r => { if (done) return; done = true; clearTimeout(stopT); micBusy = false; if (unwatch) unwatch(); try { rec.abort(); } catch (e) {} res(r); };
+    const stopSoon = ms => { clearTimeout(stopT); stopT = setTimeout(() => { try { rec.stop(); } catch (e) {} }, ms); };
+    try {
+      micBusy = true;
+      try { if (navigator.audioSession) navigator.audioSession.type = 'auto'; } catch (e) {}
+      rec = new SR(); rec.lang = 'zh-CN'; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 5;
+      rec.onstart = () => { stopSoon(6000);
+        if (useVAD) voiceWatch(() => { spoke = true; try { rec.stop(); } catch (e) {} }).then(u => { if (done) u(); else unwatch = u; }); };
+      rec.onresult = e => {
+        const r = e.results[e.results.length - 1], alts = [...r].map(a => a.transcript.trim()).filter(Boolean);
+        if (alts.length) partial = alts;
+        // Safari often only sends "interim" guesses: accept as soon as one is right, otherwise stop 1.2 s after the last guess
+        if (alts.length && (r.isFinal || judgeReading(ch, py, P, alts.slice(0, 1)) === 'ok')) end({v: judgeReading(ch, py, P, alts), alts});
+        else stopSoon(1200);
+      };
+      rec.onerror = e => end(partial.length ? {v: judgeReading(ch, py, P, partial), alts: partial} : {err: e.error});
+      rec.onend = () => end(partial.length ? {v: judgeReading(ch, py, P, partial), alts: partial} : {err: spoke ? 'unclear' : 'no-speech'});
+      rec.start();
+      onStop && onStop(() => { try { rec.stop(); } catch (e) {} }, () => end({err: 'aborted'}));
+    } catch (e) { end({err: String(e && e.message || e)}); }
+  });
+}
+
 /* ---------- modal & toast ---------- */
 let lastAct = performance.now();
 const touch = () => { lastAct = performance.now(); };
@@ -568,11 +650,42 @@ async function card(o){
         : o.zi ? `<div class="tzg"><span>${esc(o.zi)}</span></div>` : ''}
       ${o.text ? `<p>${esc(o.text)}</p>` : ''}
       ${o.hintP ? `<button type="button" class="btn soft hintbtn" data-hint="1" ${o.hintP.hints !== 0 ? '' : 'disabled'}>${hintLabel(o.hintP)}</button>` : ''}
+      ${o.listen ? `<div class="listen"><button type="button" class="mic" data-mic="1" aria-label="${L('点一下，然后读出来', 'Tap, then read it out loud')}">🎤</button>
+        <div class="lmsg" aria-live="polite">${L('点 🎤，然后大声读出来', 'Tap 🎤, then read it out loud')}</div><div class="lheard"></div></div>
+        <div class="row manual" hidden><button type="button" class="btn bad" data-k="no">${L('❌ 没读出来', '❌ Not yet')}</button><button type="button" class="btn good" data-k="yes">${L('✅ 读对了', '✅ Got it')}</button></div>` : ''}
       <div class="row">${o.btns.map(([k, l, c]) => `<button type="button" class="btn ${c || (o.btns.length === 1 ? 'primary' : '')} ${o.btns.length === 1 ? 'big' : ''}" data-k="${k}">${l}</button>`).join('')}</div>
       ${o.speak && (canSpeak || hasVoice(o.zi)) ? `<button type="button" class="link" data-say="1">🔊 ${L('听读音', 'Hear it')}</button>` : ''}</div>`;
     const shownAt = performance.now();
     let done = false;
-    const finish = k => { if (done) return; done = true; touch(); fadeCardSounds(); ov.remove(); res(k); };
+    let stopMic = null, abortMic = null, tries = 0;
+    const finish = k => { if (done) return; done = true; if (abortMic) abortMic(); touch(); fadeCardSounds(); ov.remove(); res(k); };
+    const lmsg = (t, cls) => { const m = ov.querySelector('.lmsg'); if (m){ m.textContent = t; m.className = 'lmsg ' + (cls || ''); } };
+    const heard = t => { const h = ov.querySelector('.lheard'); if (h) h.textContent = t ? L(`听到的是：${t}`, `I heard: ${t}`) : ''; };
+    // Tap 🎤 → listen → right: done. Almost (tone or a similar sound): passes after playing the right sound. Wrong: one more try.
+    async function onMic(){
+      const btn = ov.querySelector('.mic');
+      if (stopMic){ stopMic(); return; }
+      touch(); btn.classList.add('on'); heard(''); lmsg(L('正在听……', 'Listening…'));
+      const r = await listenFor(o.zi, (stop, abort) => { stopMic = stop; abortMic = abort; });
+      stopMic = abortMic = null; btn.classList.remove('on');
+      if (done) return;
+      if (r.err){
+        if (r.err === 'unclear'){ lmsg(L('听到声音了，但没听清是哪个字。靠近一点，再大声读一次', 'I heard you but couldn\'t make out the word — come closer and read it loudly again')); return; }
+        if (r.err === 'no-speech' || r.err === 'aborted' || r.err === 'nomatch'){ lmsg(L('没听清，再点 🎤 读一次', 'Didn\'t catch that — tap 🎤 and try again')); return; }
+        // microphone blocked or no recognition service: let a grown-up judge from now on
+        voiceBroken = true; btn.disabled = true;
+        lmsg(r.err === 'not-allowed' || r.err === 'service-not-allowed' ? L('不能用麦克风，请家长帮忙判断：', 'Can\'t use the microphone — a grown-up can judge instead:')
+          : L('现在听不了（可能没连上网），请家长帮忙判断：', 'Can\'t listen right now (maybe no internet) — a grown-up can judge instead:'), 'bad');
+        ov.querySelector('.manual').hidden = false; ov.querySelector('.listen + .manual + .row').hidden = true; return;
+      }
+      if (r.v === 'ok'){ btn.classList.add('ok'); lmsg(L('✅ 读对了！', '✅ You got it!'), 'ok'); await sleep(750); finish('yes'); return; }
+      tries++; heard(r.alts[0]);
+      if (r.v === 'half'){   // almost right (tone or a similar sound): passes, and the right pronunciation plays
+        say(o.zi); lmsg(L('🟡 差不多，算你读对了！听听标准读音', '🟡 Close enough! Listen to how it sounds'), 'half'); await sleep(1900); finish('yes'); return;
+      }
+      if (tries >= 2){ lmsg(L('❌ 还是不太对', '❌ Not quite'), 'bad'); await sleep(900); finish('no'); return; }
+      lmsg(L('❌ 好像不对，再读一次？', '❌ Hmm, not quite — try once more?'), 'bad');
+    }
     const pick = e => {
       let b = e.target && e.target.closest ? e.target.closest('button') : null;
       if (!b && e.clientX != null){
@@ -582,6 +695,7 @@ async function card(o){
       if (o.hintP && e.type === 'click' && (b ? b.dataset.hint : e.target.closest && e.target.closest('[data-flip]'))){ useHint(ov, o, !!(b && b.dataset.hint)); return; }
       if (!b || b.disabled) return;
       if (b.dataset.say){ if (e.type === 'click') say(o.zi); return; }
+      if (b.dataset.mic){ if (e.type === 'click') onMic(); return; }
       if (!b.dataset.k || performance.now() - shownAt < 250) return;
       e.preventDefault();
       finish(b.dataset.k);
@@ -717,6 +831,14 @@ function renderSetup(){
       <div class="row"><button type="button" class="btn soft" data-act="redraw">🎲 ${L('重新抽字', 'New characters')}</button><button type="button" class="btn soft" data-act="rearrange">🔀 ${L('道具换位置', 'Shuffle items')}</button></div>`
       : `<p class="err">${L('字库里至少要有 8 个字才能摆棋盘。', 'The list needs at least 8 characters to make a board.')}</p>`}
     </section>
+    <section class="panel"><h2>${L('谁来听读得对不对？', 'Who checks the reading?')}</h2>
+      <div class="seg wide">
+        <button type="button" data-act="check" data-v="voice" class="${S.check === 'voice' && canListen ? 'on' : ''}" ${canListen ? '' : 'disabled'}>🎤 ${L('游戏来听', 'The game listens')}</button>
+        <button type="button" data-act="check" data-v="parent" class="${S.check === 'parent' || !canListen ? 'on' : ''}">👨‍👩‍👧 ${L('家长判断', 'A grown-up')}</button></div>
+      <p class="note">${!canListen ? L('这个浏览器不能自动听读音，由家长判断。想让游戏来听，请用 iPhone / iPad 的 Safari，或电脑上的 Chrome、Edge、Safari。', 'This browser can\'t listen, so a grown-up judges. For listening, use Safari on iPhone/iPad, or Chrome, Edge or Safari on a computer.')
+        : S.check === 'voice' ? L('小朋友点 🎤 读出来，游戏会听读得对不对，一个人也能玩。第一次会问能不能用麦克风，请点「允许」。声音只交给浏览器的语音识别（Apple 或 Google）听一下，我们不录音、不保存。', 'Kids tap 🎤 and read out loud; the game checks the reading, so they can play on their own. The first time, allow the microphone. The voice only goes to the browser\'s speech recognition (Apple or Google); we don\'t record or keep it.')
+        : L('读完后由家长点「读对了」或「没读出来」。', 'After reading, a grown-up taps "Got it" or "Not yet".')}</p>
+    </section>
     <section class="panel"><h2>${L('提示卡', 'Hint cards')}</h2>
       <div class="lbl-row"><span>💡 ${L('用提示卡', 'Use hint cards')}</span><button type="button" class="switch ${S.hints ? 'on' : ''}" data-act="hints" role="switch" aria-checked="${S.hints}" aria-label="${L('提示卡开关', 'Hint cards on/off')}"><i></i></button></div>
       ${S.hints ? `<div class="lbl-row"><span>${L('每人可以用', 'Each player gets')}</span><div class="seg">${HINT_CHOICES.map(n => `<button type="button" data-act="hintn" data-v="${n}" class="${S.hintN === n ? 'on' : ''}">${n === 'inf' ? L('无限', 'Unlimited') : L(n + ' 次', String(n))}</button>`).join('')}</div></div>` : ''}
@@ -726,7 +848,8 @@ function renderSetup(){
     <section class="panel"><h2>${L('怎么玩', 'How to play')}</h2>
       <ul class="rules">
         <li><span>🎲</span><span>${t.ruleGoal}</span></li>
-        <li><span>📖</span><span>${L('走到汉字格要大声读出这个字，读不出来就回到上次的位置。', 'Land on a character? Read it out loud! If you can\'t, go back to where you were.')}</span></li>
+        <li><span>📖</span><span>${useVoice() ? L('走到汉字格，点 🎤 大声读出这个字，游戏会听你读得对不对。读错了可以再读一次，还是不对就回到上次的位置。', 'Land on a character? Tap 🎤 and read it out loud — the game listens. If it\'s not right you get one more try; otherwise go back to where you were.')
+          : L('走到汉字格要大声读出这个字，读不出来就回到上次的位置。', 'Land on a character? Read it out loud! If you can\'t, go back to where you were.')}</span></li>
         <li><span>${art('dragon','ico')}</span><span>${t.ruleDragon}</span></li>
         <li><span>${art('mush','ico')}</span><span>${t.ruleMush}</span></li>
         <li><span>${art('coach','ico')}</span><span>${t.ruleCoach}</span></li>
@@ -874,7 +997,7 @@ if (STATS_CODE && !LOCAL){
 function track(name){
   try { if (STATS_CODE && !LOCAL && window.goatcounter && window.goatcounter.count) window.goatcounter.count({path: name, title: name, event: true}); } catch (e) {}
 }
-const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v43'].join(' · ');
+const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v46'].join(' · ');
 function openFeedback(){
   track('feedback');
   const ov = document.createElement('div'); ov.className = 'overlay';
@@ -1094,6 +1217,9 @@ async function resolve(pi){
 }
 
 function readCard(p, ch, hint){
+  // Listening mode: the game hears the reading, so there is no "hear it" button (it would give the answer away);
+  // the pronunciation plays on the "remember it" card after a miss or after "I don't know".
+  if (useVoice()) return card({who:p, zi:ch, text:hint, listen:true, hintP: G.hintsOn ? p : null, btns:[['no',L('🤔 我不会', '🤔 I don\'t know'),'soft']]}).then(k => k === 'yes');
   return card({who:p, zi:ch, text:hint, speak:true, hintP: G.hintsOn ? p : null, btns:[['no',L('❌ 没读出来', '❌ Not yet'),'bad'],['yes',L('✅ 读对了', '✅ Got it'),'good']]}).then(k => k === 'yes');
 }
 async function readFlow(pi, cell){
@@ -1203,6 +1329,7 @@ document.addEventListener('click', e => {
       drawBoard(); break;
     }
     case 'hints': S.hints = !S.hints; break;
+    case 'check': S.check = b.dataset.v === 'parent' ? 'parent' : 'voice'; voiceBroken = false; break;
     case 'hintn': S.hintN = b.dataset.v === 'inf' ? 'inf' : +b.dataset.v; break;
     case 'len': S.len = +b.dataset.v; S.counts = defaultCounts(S.len); drawBoard(); break;
     case 'paste': ui.pasting = !ui.pasting; ui.libErr = ''; ui.libMsg = ''; break;

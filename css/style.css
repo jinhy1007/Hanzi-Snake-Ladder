@@ -8,7 +8,7 @@
   --leaf:#3FB873; --leaf-deep:#2A8E55;
   --plum-soft:#E6DBFB; --pumpkin-soft:#FFE0BC;
   --veil:rgba(46,42,74,.5);
-  --f-zi:"Kaiti SC","STKaiti","KaiTi","楷体","Noto Serif SC","Songti SC",serif;
+  --f-zi:"UKai CN","Kaiti SC","STKaiti","KaiTi","楷体",serif;   /* UKai CN: css/fonts.css, same 楷体 on every device */
   --f-ui:"ZCOOL KuaiLe","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
   --f-text:"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
   color-scheme:light;
@@ -272,3 +272,19 @@ button.tile:active{transform:rotate(var(--rot)) scale(.93)}
 .foot{text-align:center;padding:4px 0 18px}
 .foot .link{font-size:17px}
 .foot p{margin:6px 0 0;font-family:var(--f-text);font-size:12px;color:var(--ink-soft)}
+/* 读字卡：游戏来听 */
+.listen{display:flex;flex-direction:column;align-items:center;gap:6px}
+.listen .mic{width:84px;height:84px;border-radius:50%;border:none;background:var(--rose);color:#fff;font-size:36px;cursor:pointer;
+  box-shadow:0 5px 0 var(--rose-deep);animation:nudge 1.6s ease-in-out .8s infinite}
+.listen .mic:active{transform:translateY(3px);box-shadow:0 2px 0 var(--rose-deep)}
+.listen .mic.on{background:var(--red);animation:listening 1s ease-in-out infinite}
+.listen .mic.ok{background:var(--leaf);box-shadow:0 5px 0 var(--leaf-deep);animation:none}
+.listen .mic:disabled{opacity:.4;animation:none}
+@keyframes listening{50%{box-shadow:0 5px 0 var(--red-deep),0 0 0 14px rgba(226,71,91,.18)}}
+.lmsg{font-family:var(--f-text);font-size:17px;color:var(--ink-soft);min-height:26px;text-align:center}
+.lmsg.ok{color:var(--leaf-deep);font-weight:600}.lmsg.half{color:var(--gold-deep);font-weight:600}.lmsg.bad{color:var(--red-deep);font-weight:600}
+.lheard{font-family:var(--f-text);font-size:13px;color:var(--ink-soft);min-height:0}
+.seg.wide{display:flex;width:100%}.seg.wide button{flex:1}
+.seg button:disabled{opacity:.4}
+@media (prefers-reduced-motion: reduce){.listen .mic,.listen .mic.on{animation:none}}
+.sheet [hidden]{display:none!important}

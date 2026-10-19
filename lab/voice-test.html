@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>读音识别测试</title>
+<style>
+:root{--sky:#ECE6FA;--card:#FFFDFB;--ink:#2E2A4A;--ink-soft:#655F86;--line:#E3DAEC;--soft:#F2ECFC;--rose:#D9549B;--rose-deep:#A6386F;
+  --red:#E2475B;--red-soft:#FCD9DD;--gold:#FFC93E;--gold-deep:#D9A014;--leaf:#3FB873;--leaf-soft:#D9F3E3;--amber-soft:#FFF1CC;
+  --f-zi:"Kaiti SC","STKaiti","KaiTi","楷体","Noto Serif SC","Songti SC",serif;
+  --f-text:"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--sky);color:var(--ink);font-family:var(--f-text);font-size:16px;line-height:1.5}
+main{max-width:520px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0}
+.sub{color:var(--ink-soft);font-size:14px;margin:0 0 12px}
+.panel{background:var(--card);border-radius:22px;padding:16px;margin-bottom:14px;box-shadow:0 3px 0 var(--line)}
+.warn{background:var(--red-soft);border-radius:14px;padding:10px 12px;font-size:14px;margin-bottom:12px}
+.top{display:flex;justify-content:space-between;align-items:center;color:var(--ink-soft);font-size:14px}
+.zi{font-family:var(--f-zi);font-size:120px;line-height:1.1;text-align:center;margin:6px 0 0}
+.py{text-align:center;color:var(--rose-deep);font-size:18px;min-height:27px}
+.mic{display:block;margin:12px auto 6px;width:120px;height:120px;border-radius:50%;border:none;background:var(--rose);color:#fff;font-size:46px;
+  box-shadow:0 6px 0 var(--rose-deep);cursor:pointer}
+.mic:active{transform:translateY(3px);box-shadow:0 3px 0 var(--rose-deep)}
+.mic.on{background:var(--red);animation:pulse 1s infinite}
+@keyframes pulse{50%{box-shadow:0 6px 0 var(--rose-deep),0 0 0 14px rgba(226,71,91,.18)}}
+.hint{text-align:center;color:var(--ink-soft);font-size:14px;min-height:21px}
+.res{border-radius:16px;padding:12px;margin-top:10px;text-align:center;display:none}
+.res.ok{display:block;background:var(--leaf-soft)}.res.half{display:block;background:var(--amber-soft)}.res.bad{display:block;background:var(--red-soft)}
+.res b{font-size:22px;display:block}
+.res small{display:block;color:var(--ink-soft);font-size:13px;margin-top:4px;word-break:break-all}
+.judge{display:none;margin-top:12px;text-align:center}
+.judge p{margin:0 0 8px;font-size:14px;color:var(--ink-soft)}
+.row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.btn{border:none;border-radius:14px;padding:10px 16px;font:inherit;font-size:16px;cursor:pointer;background:var(--soft);color:var(--ink);box-shadow:0 3px 0 var(--line)}
+.btn.good{background:var(--leaf-soft)}.btn.bad{background:var(--red-soft)}.btn.gold{background:var(--gold);box-shadow:0 3px 0 var(--gold-deep)}
+.btn:disabled{opacity:.45}
+label.tog{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--ink-soft);margin-top:8px}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:8px 0}
+.stats div{background:var(--soft);border-radius:12px;padding:8px 10px;font-size:13px;color:var(--ink-soft)}
+.stats b{display:block;font-size:22px;color:var(--ink)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{padding:5px 4px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+td.z{font-family:var(--f-zi);font-size:22px}
+textarea{width:100%;height:120px;font-size:12px;border-radius:12px;border:2px solid var(--line);padding:8px;margin-top:8px}
+ol{padding-left:20px;margin:6px 0;font-size:14px}
+.meterbox{display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap}
+.meter{flex:1;min-width:120px;height:14px;background:var(--soft);border-radius:8px;overflow:hidden}
+.meter i{display:block;height:100%;width:0;background:var(--leaf);transition:width .08s}
+#mmsg{font-size:13px;color:var(--ink-soft);width:100%}
+.dbg{margin-top:10px;font-size:13px;color:var(--ink-soft)}.dbg pre{white-space:pre-wrap;font-size:11px;max-height:160px;overflow:auto;background:var(--soft);border-radius:10px;padding:8px;margin:6px 0 0}
+</style>
+</head>
+<body>
+<main>
+  <h1>🎤 读音识别测试</h1>
+  <p class="sub">测试手机或电脑能不能听出小朋友读的字。结果只用来决定游戏要不要加「自动听」，不会保存录音。</p>
+  <div id="unsupported" class="warn" hidden></div>
+
+  <section class="panel">
+    <div class="top"><span id="count"></span><button class="btn" id="newset" type="button">🔀 换一组字</button></div>
+    <div class="zi" id="zi"></div>
+    <div class="py" id="py"></div>
+    <button class="mic" id="mic" type="button" aria-label="点一下，然后读这个字">🎤</button>
+    <div class="hint" id="hint">点一下话筒，然后大声读这个字</div>
+    <div class="res" id="res"></div>
+    <div class="judge" id="judge">
+      <p>家长：小朋友实际读对了吗？</p>
+      <div class="row"><button class="btn good" type="button" data-truth="1">✅ 实际读对了</button><button class="btn bad" type="button" data-truth="0">❌ 实际读错了</button></div>
+    </div>
+    <div class="row" style="margin-top:12px"><button class="btn" id="skip" type="button">跳过这个字 ➡️</button></div>
+    <div class="meterbox"><button class="btn" id="mtest" type="button">🎙️ 先测一下麦克风</button>
+      <div class="meter" aria-hidden="true"><i id="lvl"></i></div><span id="mmsg"></span></div>
+    <details class="dbg"><summary>技术细节（出问题时看这里）</summary><pre id="dbg"></pre></details>
+    <label class="tog"><input type="checkbox" id="showpy"> 一直显示拼音（家长用；平时读完才显示）</label>
+  </section>
+
+  <section class="panel">
+    <h2 style="font-size:18px;margin:0">测试结果</h2>
+    <div class="stats">
+      <div>测了<b id="sN">0</b></div>
+      <div>判断正确（看所有猜测）<b id="sAcc">–</b></div>
+      <div>判断正确（只看第一个猜测）<b id="sTop">–</b></div>
+      <div>读对了却说错（最要紧）<b id="sFalseBad">0</b></div>
+      <div>读错了却说对<b id="sFalseOk">0</b></div>
+      <div>没听到 / 出错<b id="sMiss">0</b></div>
+      <div>平均等待<b id="sWait">–</b></div>
+    </div>
+    <table><thead><tr><th>字</th><th>听到</th><th>判断</th><th>实际</th></tr></thead><tbody id="log"></tbody></table>
+    <div class="row" style="margin-top:12px"><button class="btn gold" id="copy" type="button">📋 复制结果发给 Claude</button></div>
+    <textarea id="out" readonly hidden></textarea>
+  </section>
+
+  <section class="panel">
+    <h2 style="font-size:18px;margin:0">怎么测</h2>
+    <ol>
+      <li>先点「🎙️ 先测一下麦克风」，说几句话，看绿色条有没有跳。没跳的话：打开 Mac 的「系统设置 → 隐私与安全性 → 麦克风」，确认 Chrome / Safari 打开了；再看「系统设置 → 声音 → 输入」选的是哪个麦克风，说话时输入电平有没有动。</li>
+      <li>第一次点话筒，浏览器会问能不能用麦克风，点「允许」。</li>
+      <li>让小朋友看着字，点话筒后读出来。读完会显示「读对了」或「好像不对」。</li>
+      <li>家长点「实际读对了 / 实际读错了」，告诉测试页真实情况，然后自动换下一个字。</li>
+      <li>也可以故意读错几个，看它能不能发现。最好是小朋友真会犯的错：读错声调（比如把「妈」读成 mǎ）、
+        相近的音（zh / z、an / ang、n / l），或者把长得像的字读错（大 / 太、人 / 入）。</li>
+      <li>测 20 个左右后，点「复制结果发给 Claude」，粘贴给我。手机和电脑最好都测一下。</li>
+    </ol>
+  </section>
+</main>
+
+<script src="../js/hints.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const LIB = Object.keys(HINTS).slice(0, 300);            // the 300 common characters
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const DIGITS = {'0':'零','1':'一','2':'二','3':'三','4':'四','5':'五','6':'六','7':'七','8':'八','9':'九','10':'十','100':'百','1000':'千','10000':'万'};
+const strip = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ü/g, 'v').toLowerCase();
+let P = null, set = [], idx = 0, rec = null, listening = false, tSpeechEnd = 0, cur = null;
+const log = [];
+
+function loadPinyin(){
+  return new Promise((res, rej) => {
+    if (window.pinyinPro) return res(window.pinyinPro);
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/pinyin-pro@3.26.0/dist/index.js';
+    s.onload = () => window.pinyinPro ? res(window.pinyinPro) : rej(new Error('no pinyinPro'));
+    s.onerror = () => rej(new Error('load failed'));
+    document.head.appendChild(s);
+  });
+}
+function shuffle(a){ for (let i = a.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+function newSet(){ set = shuffle(LIB.slice()).slice(0, 20); idx = 0; show(); }
+function show(){
+  const ch = set[idx]; cur = null;
+  $('zi').textContent = ch; $('count').textContent = `第 ${idx + 1} / ${set.length} 个`;
+  $('py').textContent = $('showpy').checked ? HINTS[ch][0] : '';
+  $('res').className = 'res'; $('judge').style.display = 'none';
+  $('hint').textContent = '点一下话筒，然后大声读这个字';
+}
+function next(){ idx = (idx + 1) % set.length; if (idx === 0) newSet(); else show(); }
+
+// Every syllable the recognizer could have meant, from all its guesses (digits turned back into characters).
+function heardSyllables(texts){
+  const out = [];
+  for (const t0 of texts){
+    const t = t0.replace(/\d+/g, d => DIGITS[d] || d);
+    const chars = (t.match(/\p{Script=Han}/gu) || []);
+    if (!chars.length) continue;
+    const pys = P ? P.pinyin(chars.join(''), {type:'array'}) : [];
+    chars.forEach((c, i) => out.push({c, py: pys[i] || ''}));
+  }
+  return out;
+}
+function judge(ch, texts){
+  const target = HINTS[ch][0], heard = heardSyllables(texts);
+  if (heard.some(h => h.c === ch)) return {v:'ok', why:'听到的就是这个字'};
+  if (heard.some(h => h.py === target)) return {v:'ok', why:'同音字，拼音和声调都对'};
+  if (heard.some(h => strip(h.py) === strip(target))) return {v:'half', why:'拼音对，声调可能不对'};
+  return {v:'bad', why:'拼音对不上'};
+}
+
+function listen(){
+  if (!SR) return;
+  if (listening){ rec && rec.stop(); return; }
+  const ch = set[idx];
+  rec = new SR(); rec.lang = 'zh-CN'; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 5;
+  // Safari keeps listening until stopped and may only ever send "interim" guesses for one short syllable:
+  // keep the latest guesses, stop by ourselves 1.2 s after the last guess (or after 6 s), and judge what we have.
+  let done = false, partial = [], stopT = null;
+  const t0 = performance.now(); tSpeechEnd = 0; dbg('— 开始听「' + ch + '」');
+  const stopSoon = ms => { clearTimeout(stopT); stopT = setTimeout(() => { dbg('自动停止'); try { rec.stop(); } catch (e) {} }, ms); };
+  const end = (alts, err) => { if (done) return; done = true; clearTimeout(stopT);
+    const wait = tSpeechEnd ? Math.round(performance.now() - tSpeechEnd) : null; finish(ch, alts, wait, err); try { rec.abort(); } catch (e) {} };
+  ['audiostart', 'soundstart', 'speechstart', 'speechend', 'soundend', 'audioend', 'nomatch'].forEach(k =>
+    rec.addEventListener(k, () => { dbg(k); if (k === 'speechend' || k === 'soundend') tSpeechEnd = tSpeechEnd || performance.now(); }));
+  rec.onstart = () => { listening = true; $('mic').classList.add('on'); $('hint').textContent = '正在听……读完会自动停'; stopSoon(6000); };
+  rec.onresult = e => {
+    const r = e.results[e.results.length - 1], alts = [...r].map(a => a.transcript.trim()).filter(Boolean);
+    dbg(`${r.isFinal ? 'final' : 'interim'}: ${alts.join(' / ')}`);
+    if (alts.length) partial = alts;
+    if (alts.length && (r.isFinal || judge(ch, alts.slice(0, 1)).v === 'ok')){ if (!r.isFinal) dbg('已经对了，提前结束'); end(alts, null); }
+    else stopSoon(1200);
+  };
+  rec.onerror = e => { dbg('error: ' + e.error + (e.message ? ' ' + e.message : '')); if (partial.length) end(partial, null); else end([], e.error); };
+  rec.onend = () => { dbg('end · ' + Math.round(performance.now() - t0) + 'ms'); listening = false; $('mic').classList.remove('on');
+    if (partial.length) end(partial, null); else end([], 'no-speech'); };
+  try { rec.start(); } catch (err) { end([], String(err.message || err)); }
+}
+const ERR = {'no-speech':'没听到声音，再试一次？', 'not-allowed':'没有麦克风权限：请在浏览器设置里允许这个网页用麦克风。',
+  'service-not-allowed':'这个浏览器不让网页用语音识别。', 'network':'语音识别要连网（Chrome 用的是 Google 的服务，在中国大陆可能连不上）。',
+  'audio-capture':'找不到麦克风。', 'aborted':'停止了。'};
+function finish(ch, alts, wait, err){
+  listening = false; $('mic').classList.remove('on');
+  const r = $('res');
+  $('py').textContent = HINTS[ch][0];
+  if (err || !alts.length){
+    r.className = 'res bad'; r.innerHTML = `<b>😶 ${ERR[err] || '出错了：' + err}</b>`;
+    cur = {ch, alts, v:'miss', why: err || 'empty', wait};
+  } else {
+    const j = judge(ch, alts);
+    cur = {ch, alts, v:j.v, why:j.why, wait, top: judge(ch, alts.slice(0, 1)).v};
+    r.className = 'res ' + j.v;
+    r.innerHTML = `<b>${j.v === 'ok' ? '✅ 读对了！' : j.v === 'half' ? '🟡 差不多（声调再听听）' : '❌ 好像不对'}</b>
+      <small>听到：${alts.map(a => esc(a)).join(' / ')}<br>${j.why}${wait != null ? ` · 等了 ${(wait / 1000).toFixed(1)} 秒` : ''}</small>`;
+  }
+  $('hint').textContent = '';
+  $('judge').style.display = 'block';
+}
+function dbg(m){ const el = $('dbg'); el.textContent += `${(performance.now() / 1000).toFixed(1)}s ${m}\n`; el.scrollTop = el.scrollHeight; dlog.push(m); }
+const dlog = [];
+// Microphone check: shows a live level bar for 4 seconds so we can see whether any sound reaches the browser.
+async function micTest(){
+  const msg = $('mmsg'); msg.textContent = '请说几句话……';
+  try {
+    const st = await navigator.mediaDevices.getUserMedia({audio: true});
+    const track = st.getAudioTracks()[0]; dbg('麦克风：' + (track && track.label || '未知'));
+    const ctx = new (window.AudioContext || window.webkitAudioContext)(); await ctx.resume();
+    const an = ctx.createAnalyser(); an.fftSize = 1024; ctx.createMediaStreamSource(st).connect(an);
+    const buf = new Float32Array(an.fftSize); let peak = 0; const t0 = performance.now();
+    await new Promise(res => { (function tick(){
+      an.getFloatTimeDomainData(buf); let m = 0; for (const v of buf) m = Math.max(m, Math.abs(v));
+      peak = Math.max(peak, m); $('lvl').style.width = Math.min(100, m * 250) + '%';
+      if (performance.now() - t0 < 4000) requestAnimationFrame(tick); else res(); })(); });
+    st.getTracks().forEach(t => t.stop()); ctx.close(); $('lvl').style.width = '0';
+    dbg('麦克风最大音量 ' + peak.toFixed(3));
+    msg.textContent = peak > 0.05 ? `✅ 麦克风有声音（${track.label || '默认麦克风'}）。` :
+      peak > 0.005 ? `🟡 声音很小（${track.label || '默认麦克风'}），请靠近一点或调大输入音量。` :
+      `❌ 没收到声音（${track.label || '默认麦克风'}）。请看下面「怎么测」里的麦克风检查。`;
+  } catch (e) { dbg('麦克风出错：' + e.name + ' ' + e.message); msg.textContent = '❌ 打不开麦克风：' + (e.name === 'NotAllowedError' ? '没有权限' : e.message); }
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function record(truth){
+  if (!cur) return;
+  log.push({...cur, truth}); cur = null; stats(); next();
+}
+function stats(){
+  const done = log.filter(l => l.v !== 'miss'), n = log.length;
+  // count 🟡 as "right": the game would be generous about tones
+  const sayOk = l => l.v === 'ok' || l.v === 'half';
+  const correct = done.filter(l => sayOk(l) === l.truth).length;
+  const sayOkTop = l => l.top === 'ok' || l.top === 'half', correctTop = done.filter(l => sayOkTop(l) === l.truth).length;
+  $('sN').textContent = n;
+  $('sAcc').textContent = done.length ? `${correct} / ${done.length}` : '–';
+  $('sTop').textContent = done.length ? `${correctTop} / ${done.length}` : '–';
+  $('sFalseBad').textContent = done.filter(l => l.truth && !sayOk(l)).length;
+  $('sFalseOk').textContent = done.filter(l => !l.truth && sayOk(l)).length;
+  $('sMiss').textContent = log.filter(l => l.v === 'miss').length;
+  const w = log.filter(l => l.wait != null).map(l => l.wait);
+  $('sWait').textContent = w.length ? (w.reduce((a, b) => a + b, 0) / w.length / 1000).toFixed(1) + ' 秒' : '–';
+  $('log').innerHTML = log.slice().reverse().map(l => `<tr><td class="z">${l.ch}</td><td>${esc(l.alts.join(' / ') || l.why)}</td>
+    <td>${{ok:'✅', half:'🟡', bad:'❌', miss:'😶'}[l.v]}</td><td>${l.truth ? '读对' : '读错'}</td></tr>`).join('');
+}
+function report(){
+  const ua = navigator.userAgent;
+  const lines = [`读音识别测试结果 · ${new Date().toLocaleString()}`, `浏览器：${ua}`,
+    `测了 ${$('sN').textContent}，判断正确（所有猜测）${$('sAcc').textContent}，（只看第一个）${$('sTop').textContent}，读对却说错 ${$('sFalseBad').textContent}，读错却说对 ${$('sFalseOk').textContent}，没听到/出错 ${$('sMiss').textContent}，平均等待 ${$('sWait').textContent}`, ''];
+  lines.push('事件：' + dlog.slice(-40).join(' | '), '');
+  log.forEach(l => lines.push(`${l.ch} ${HINTS[l.ch][0]} | 听到：${l.alts.join(' / ') || '-'} | ${l.v}（${l.why}）· 第一个猜测 ${l.top || '-'} | 实际${l.truth ? '读对' : '读错'}${l.wait != null ? ' | ' + l.wait + 'ms' : ''}`));
+  return lines.join('\n');
+}
+
+$('mic').onclick = listen;
+$('mtest').onclick = micTest;
+$('skip').onclick = () => { if (listening && rec) rec.abort(); next(); };
+$('newset').onclick = newSet;
+$('showpy').onchange = show;
+$('judge').onclick = e => { const b = e.target.closest('[data-truth]'); if (b) record(b.dataset.truth === '1'); };
+$('copy').onclick = async () => {
+  const t = report(), o = $('out'); o.value = t; o.hidden = false;
+  try { await navigator.clipboard.writeText(t); $('copy').textContent = '✅ 已复制，可以粘贴给 Claude 了'; }
+  catch (e) { o.select(); $('copy').textContent = '请长按下面的文字全选复制'; }
+};
+
+if (!SR){
+  $('unsupported').hidden = false; $('mic').disabled = true;
+  $('unsupported').textContent = '这个浏览器不支持语音识别。请用 iPhone/iPad 的 Safari，或电脑上的 Chrome、Edge、Safari 打开。（Firefox 不支持。）';
+} else if (!window.isSecureContext){
+  $('unsupported').hidden = false;
+  $('unsupported').textContent = '语音识别需要 https 网址才能用麦克风。';
+}
+loadPinyin().then(p => { P = p; }).catch(() => {
+  $('unsupported').hidden = false; $('unsupported').textContent = '拼音工具没加载成功（要连网），只能比对完全相同的字。';
+});
+newSet();
+</script>
+</body>
+</html>

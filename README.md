@@ -105,3 +105,18 @@ carriage 由两段生成结果拼接；splash、boing、glide、gust（Universfi
   | feedback | 打开了意见反馈 |
 
 - 链接和代码在 js/game.js 的 `FEEDBACK_URL`、`STATS_CODE`，换成别的表单或统计账号改这两行就行。
+
+## 汉字字体
+
+汉字卡和棋盘上的字都用文鼎 PL 中楷 CN（AR PL UKai CN，Arphic Public License，见 fonts/ARPHIC-LICENSE.txt），
+所以 iPhone、iPad、安卓、Windows、Mac 上看到的楷体都一样（以前 iPhone 没有楷体，会变成宋体）。
+字体只留了要用的字：fonts/ukai-core.woff2（内置 1000 字和组词，约 280 KB）、fonts/ukai-more.woff2（GB2312 一级里其余的常用字，
+上传自己的字库时才会下载）。生僻字用设备自带字体。改了字库后运行 `.venv/bin/python tools/build_font.py` 重新生成（需要 fonttools、brotli）。
+
+## 游戏来听（读音识别）
+
+设置里「谁来听读得对不对？」选「🎤 游戏来听」时，读字卡上点 🎤 读出来，浏览器的语音识别（Safari 用 Apple，Chrome 用 Google）
+听写出汉字，再转成拼音和这个字比较：字一样或同音 → 读对；拼音对、声调或相近的音（zh/z、ch/c、sh/s、n/l、-ng/-n）不同 → 🟡 差不多，
+算对并播放标准读音；其他 → 再读一次，还不对就回到上次的位置。「🤔 我不会」直接显示学字卡并播放读音。
+Chrome/Edge 上另外看麦克风音量，读完 0.6 秒就停止，不用等背景噪音。浏览器不支持或麦克风不能用时，自动换成家长点「读对了 / 没读出来」。
+测试页：lab/voice-test.html。
