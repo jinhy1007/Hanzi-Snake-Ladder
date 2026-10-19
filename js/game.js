@@ -301,7 +301,10 @@ function defaultSettings(){
 let S = load(KEY_S);
 if (!S || !Array.isArray(S.players) || !S.players.length || !S.counts || !S.mine) S = defaultSettings();
 if (S.hints === undefined) S.hints = true;
-if (S.check !== 'parent') S.check = 'voice';   // who judges the reading: 'voice' (the game listens) or 'parent'
+// Who judges the reading: 'parent' (default) or 'voice' (the game listens: for kids playing alone, or grown-ups who
+// don't read Chinese). Listening was the default for a day (S.checkV missing); it misheard too often, so reset once.
+if (S.check !== 'voice' || !S.checkV) S.check = 'parent';
+S.checkV = 2;
 // emoji avatars were removed: give those players a free creature (and its name, if they kept the default name)
 S.players.forEach(p => {
   if (creatureOf(p.avatar)) return;
@@ -833,11 +836,11 @@ function renderSetup(){
     </section>
     <section class="panel"><h2>${L('谁来听读得对不对？', 'Who checks the reading?')}</h2>
       <div class="seg wide">
-        <button type="button" data-act="check" data-v="voice" class="${S.check === 'voice' && canListen ? 'on' : ''}" ${canListen ? '' : 'disabled'}>🎤 ${L('游戏来听', 'The game listens')}</button>
-        <button type="button" data-act="check" data-v="parent" class="${S.check === 'parent' || !canListen ? 'on' : ''}">👨‍👩‍👧 ${L('家长判断', 'A grown-up')}</button></div>
+        <button type="button" data-act="check" data-v="parent" class="${S.check === 'parent' || !canListen ? 'on' : ''}">👨‍👩‍👧 ${L('家长判断', 'A grown-up')}</button>
+        <button type="button" data-act="check" data-v="voice" class="${S.check === 'voice' && canListen ? 'on' : ''}" ${canListen ? '' : 'disabled'}>🎤 ${L('游戏来听', 'The game listens')}</button></div>
       <p class="note">${!canListen ? L('这个浏览器不能自动听读音，由家长判断。想让游戏来听，请用 iPhone / iPad 的 Safari，或电脑上的 Chrome、Edge、Safari。', 'This browser can\'t listen, so a grown-up judges. For listening, use Safari on iPhone/iPad, or Chrome, Edge or Safari on a computer.')
-        : S.check === 'voice' ? L('小朋友点 🎤 读出来，游戏会听读得对不对，一个人也能玩。第一次会问能不能用麦克风，请点「允许」。声音只交给浏览器的语音识别（Apple 或 Google）听一下，我们不录音、不保存。', 'Kids tap 🎤 and read out loud; the game checks the reading, so they can play on their own. The first time, allow the microphone. The voice only goes to the browser\'s speech recognition (Apple or Google); we don\'t record or keep it.')
-        : L('读完后由家长点「读对了」或「没读出来」。', 'After reading, a grown-up taps "Got it" or "Not yet".')}</p>
+        : S.check === 'voice' ? L('小朋友点 🎤 读出来，游戏会听读得对不对，一个人也能玩。单个字不容易听准，有时要多读一次。第一次会问能不能用麦克风，请点「允许」。声音只交给浏览器的语音识别（Apple 或 Google）听一下，我们不录音、不保存。', 'Kids tap 🎤 and read out loud; the game checks the reading, so they can play on their own. Single characters are hard to hear, so sometimes they\'ll need to read twice. The first time, allow the microphone. The voice only goes to the browser\'s speech recognition (Apple or Google); we don\'t record or keep it.')
+        : L('读完后由家长点「读对了」或「没读出来」，卡片上可以听标准读音。小朋友一个人玩，或者家长不会中文时，可以选「🎤 游戏来听」。', 'After reading, a grown-up taps "Got it" or "Not yet" (the card can play the pronunciation). If the kid plays alone, or the grown-up doesn\'t read Chinese, choose "🎤 The game listens".')}</p>
     </section>
     <section class="panel"><h2>${L('提示卡', 'Hint cards')}</h2>
       <div class="lbl-row"><span>💡 ${L('用提示卡', 'Use hint cards')}</span><button type="button" class="switch ${S.hints ? 'on' : ''}" data-act="hints" role="switch" aria-checked="${S.hints}" aria-label="${L('提示卡开关', 'Hint cards on/off')}"><i></i></button></div>
@@ -997,7 +1000,7 @@ if (STATS_CODE && !LOCAL){
 function track(name){
   try { if (STATS_CODE && !LOCAL && window.goatcounter && window.goatcounter.count) window.goatcounter.count({path: name, title: name, event: true}); } catch (e) {}
 }
-const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v46'].join(' · ');
+const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v47'].join(' · ');
 function openFeedback(){
   track('feedback');
   const ov = document.createElement('div'); ov.className = 'overlay';
