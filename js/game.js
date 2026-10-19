@@ -271,7 +271,10 @@ function mapHTML(b, opt = {}){
 
 
 /* ---------- settings & state ---------- */
-function libChars(){ return S.lib === 'mine' ? (S.mine.chars || []) : hanOf(LIB300); }
+// Built-in lists: 300 common characters, plus the next 200 / 700 from hints.js (easiest first).
+const COMMON = ['c300', 'c500', 'c1000'];
+const commonChars = k => hanOf(LIB300 + (k === 'c300' || typeof LIB_MORE === 'undefined' ? '' : LIB_MORE[k] || ''));
+function libChars(){ return S.lib === 'mine' ? (S.mine.chars || []) : commonChars(S.lib); }
 function drawBoard(){
   const lib = libChars();
   if (lib.length < 8){ S.board = null; return; }
@@ -305,6 +308,8 @@ S.players.forEach(p => {
   if (/^玩家\d+$/.test(p.name || '') || !(p.name || '').trim()) p.name = creatureOf(av).zh;
   p.avatar = av;
 });
+if (S.lib !== 'mine' && !COMMON.includes(S.lib)) S.lib = 'c300';
+if (!COMMON.includes(S.common)) S.common = S.lib === 'mine' ? 'c300' : S.lib;
 if (S.lang !== 'en') S.lang = 'zh';
 document.documentElement.lang = S.lang === 'en' ? 'en' : 'zh-CN';
 if (!HINT_CHOICES.includes(S.hintN)) S.hintN = 3;
@@ -501,7 +506,7 @@ function sfx(k){
 const canSpeak = 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
 // Recorded pronunciation (a little girl's voice, tools/voices.py) for the 300 built-in characters: sounds/zi/<code point>.m4a.
 // Characters without a recording (e.g. from an uploaded list) fall back to the device's speech voice.
-const hasVoice = ch => typeof HINTS !== 'undefined' && !!HINTS[ch];
+const hasVoice = ch => typeof HINTS !== 'undefined' && !!HINTS[ch];   // every built-in character (all 1000) has a girl-voice recording
 const voiceBufs = {}; let voiceSrc = null;
 function loadVoice(ch){
   if (!voiceBufs[ch]) voiceBufs[ch] = fetch(`sounds/zi/${ch.codePointAt(0).toString(16)}.m4a`).then(r => { if (!r.ok) throw 0; return r.arrayBuffer(); })
@@ -679,7 +684,10 @@ function renderSetup(){
   const libPanel = `
     <section class="panel"><h2>${L('选字库', 'Character list')}</h2>
       <div class="choices">
-        <button type="button" class="choice ${S.lib === 'c300' ? 'on' : ''}" data-act="lib" data-v="c300"><b>${L('常用 300 字', '300 common characters')}</b><span>${L('适合刚开始认字的小朋友', 'Great for kids just starting to read')}</span></button>
+        <div role="button" tabindex="0" class="choice ${S.lib !== 'mine' ? 'on' : ''}" data-act="lib" data-v="${S.common}"><b class="libsel"><select id="libSize" aria-label="${L('常用字字库', 'Common characters list')}">
+          ${COMMON.map(k => `<option value="${k}" ${S.common === k ? 'selected' : ''}>${L(`常用 ${k.slice(1)} 字`, `${k.slice(1)} common characters`)}</option>`).join('')}</select></b>
+          <span>${{c300: L('适合刚开始认字的小朋友', 'Great for kids just starting to read'), c500: L('认识一些字以后，再多学 200 个', 'Know a few already? 200 more to learn'),
+            c1000: L('认字比较多的小朋友来挑战', 'A challenge for confident readers')}[S.common]}</span></div>
         <button type="button" class="choice ${S.lib === 'mine' ? 'on' : ''}" data-act="lib" data-v="mine"><b>${L('我的字库', 'My characters')}</b><span>${mineN ? `${L(`${mineN} 个字`, `${mineN} characters`)}${S.mine.name ? ' · ' + esc(S.mine.name) : ''}` : L('上传表格或粘贴汉字', 'Upload a spreadsheet or paste characters')}</span></button>
       </div>
       ${S.lib === 'mine' ? `
@@ -773,7 +781,7 @@ function openTile(i){
     if (t === 'rand'){
       const onBoard = new Set(boardChars(S.board));
       let pool = libChars().filter(ch => !onBoard.has(ch));
-      if (!pool.length) pool = hanOf(LIB300).filter(ch => !onBoard.has(ch));
+      if (!pool.length) pool = commonChars('c1000').filter(ch => !onBoard.has(ch));
       if (!pool.length){ paint(L('没有别的字可以换了。', 'There are no other characters to swap in.'), true); return; }
       c.ch = pool[rnd(pool.length)];
     } else if (t === 'own'){
@@ -1123,6 +1131,7 @@ function newGame(players, board){
 
 /* ---------- events ---------- */
 document.addEventListener('click', e => {
+  if (e.target.closest('select')) return;   // the dropdown handles itself (re-rendering would close it)
   const b = e.target.closest('[data-act]'); if (!b || !app.contains(b)) return;
   const act = b.dataset.act, i = +b.dataset.i;
   ac();
@@ -1194,6 +1203,13 @@ document.addEventListener('click', e => {
     default: return;
   }
   saveS(); rerenderSetupKeepScroll();
+});
+document.addEventListener('change', e => {
+  if (e.target.id !== 'libSize') return;
+  S.common = S.lib = e.target.value; ui.libErr = ''; ui.libMsg = ''; drawBoard(); saveS(); rerenderSetupKeepScroll();
+});
+document.addEventListener('keydown', e => {   // the common-list card is a div (it holds a <select>), so make Enter/Space work
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('div.choice[data-act]')){ e.preventDefault(); e.target.click(); }
 });
 document.addEventListener('input', e => {
   const t = e.target;

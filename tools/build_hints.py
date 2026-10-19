@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""生成 js/hints.js：常用 300 字的拼音和一个常用组词（提示卡用）。
+"""生成 js/hints.js：常用 300 字（加上 tools/hints_more.txt 里的 700 个扩展字）的拼音和一个常用组词（提示卡用）。
 
 每条格式：字 字的拼音 组词 组词拼音（音节用 _ 连接）。
 多音字的读音跟着组词走；避开了「一」「不」变调的词，免得拼音和单字读音对不上。
@@ -17,8 +17,10 @@ TONES = str.maketrans('āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ', 'aaaae
 def main():
     src = open(os.path.join(ROOT, 'js', 'game.js'), encoding='utf-8').read()
     lib = [c for c in re.search(r"const LIB300 = '([^']*)'", src).group(1) if '一' <= c <= '鿿']
+    more = [l.strip() for l in open(os.path.join(ROOT, 'tools', 'hints_more.txt'), encoding='utf-8') if l.strip() and not l.startswith('#')]
+    extra = [e.split(' ')[0] for e in more]
     data, errs = {}, []
-    for e in T.split('|'):
+    for e in T.split('|') + more:
         ch, py, w, wpy = e.split(' '); wpy = wpy.split('_')
         if ch in data: errs.append('重复 ' + ch)
         if ch not in w: errs.append(f'{ch} 不在 {w} 里')
@@ -26,12 +28,15 @@ def main():
         elif wpy[w.index(ch)].translate(TONES) != py.translate(TONES): errs.append(f'{ch} {py} 和 {w} 里的 {wpy[w.index(ch)]} 不一致')
         data[ch] = [py, w, ' '.join(wpy)]
     missing = [c for c in lib if c not in data]
-    print(f'{len(data)} 条；缺少 {missing}；多出 {[c for c in data if c not in lib]}')
+    print(f'{len(data)} 条；缺少 {missing}；另加 {len(extra)} 个字')
+    if len(extra) != 700: errs.append(f'扩展字应该是 700 个，现在 {len(extra)} 个')
     print('\n'.join(errs) or '检查通过')
     lines = ',\n'.join(f'  "{k}":{json.dumps(v, ensure_ascii=False)}' for k, v in data.items())
     with open(os.path.join(ROOT, 'js', 'hints.js'), 'w', encoding='utf-8') as fo:
         fo.write('/* 提示卡数据（由 tools/build_hints.py 生成）：字 → [拼音, 常用组词, 组词拼音]。\n'
-                 '   没有收录的字，游戏会临时加载 pinyin-pro，只显示拼音。 */\nconst HINTS = {\n' + lines + '\n};\n')
+                 '   没有收录的字，游戏会临时加载 pinyin-pro，只显示拼音。 */\nconst HINTS = {\n' + lines + '\n};\n'
+                 '/* 500 / 1000 字库在常用 300 字后面加的字（按先易后难排）。 */\n'
+                 f"const LIB_MORE = {{ c500: '{''.join(extra[:200])}', c1000: '{''.join(extra)}' }};\n")
 
 
 if __name__ == '__main__':

@@ -8,7 +8,7 @@
 index.html            页面
 css/style.css         样式
 js/game.js            游戏逻辑（字库、棋盘、道具、读音判断）
-js/hints.js           提示卡数据：常用 300 字的拼音和常用组词（由 tools/build_hints.py 生成）
+js/hints.js           提示卡数据：1000 个内置字的拼音和常用组词，以及 500 / 1000 字库的字表（由 tools/build_hints.py 生成）
 images/maps/          地图背景：map-short、map-mid（森林城堡），map-long-sports（长棋盘：动物城运动会）
 images/props/         森林主题的道具卡片和角标；images/props/sports/ 是运动会主题的道具和从地图上裁的小图
 js/map-paths.js       长棋盘运动会地图上画出来的跑道中线（tools/build_sports.py 生成），格子沿着它摆
@@ -52,8 +52,9 @@ API key 也可以写在项目根目录的 `.env` 文件里（一行 `KIE_API_KEY
 ## 提示卡
 
 设置页的「提示卡」默认打开，每位玩家每局可以选 3 次、6 次或无限次提示（默认 3 次），读字时点「💡 提示」，卡片翻过来显示拼音和一个常用组词。
-常用 300 字的数据在 `tools/build_hints.py` 里，改完运行 `.venv/bin/python tools/build_hints.py` 重新生成 `js/hints.js`。
-自己上传的字库里如果有不在这 300 个字里的字，提示卡会临时加载 pinyin-pro，只显示拼音。
+字库是一个下拉框：常用 300 字（默认）、500 字、1000 字。常用 300 字的数据在 `tools/build_hints.py` 里，
+另外 700 个字在 `tools/hints_more.txt`（按先易后难排，前 200 个组成 500 字库）。改完运行 `.venv/bin/python tools/build_hints.py` 重新生成 `js/hints.js`。
+自己上传的字库里如果有不在这 1000 个字里的字，提示卡会临时加载 pinyin-pro，只显示拼音。
 
 更新 css/js 文件后，把 `index.html` 里的 `?v=` 数字加一，手机和电脑上就不会用到旧的缓存文件。
 
@@ -82,7 +83,7 @@ carriage 由两段生成结果拼接；splash、boing、glide、gust（Universfi
 
 ## 汉字发音
 
-常用 300 字的发音是一个小女孩的声音（Kie.ai 上的 Gemini 3.1 Flash 配音，每个字单独生成，多音字按 js/hints.js 的拼音读），
+1000 个内置字的发音都是一个小女孩的声音（Kie.ai 上的 Gemini 3.1 Flash 配音，每个字单独生成，多音字按 js/hints.js 的拼音读），
 存在 sounds/zi/<字的 Unicode 码位>.m4a（比如「水」是 6c34.m4a），一共约 3.5 MB。
 生成：tools/voices.py --all（已有的会跳过）；后期处理（去静音、统一音量、转码）：tools/voices_post.py。
-不在这 300 个里的字（比如上传的字库）用设备自带的语音。
+不在这 1000 个里的字（比如上传的字库）用设备自带的语音。

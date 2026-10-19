@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """把 art-src/voices/girl300/<字>.wav 处理成游戏用的 sounds/zi/<码位>.m4a：
 去掉前后静音、音量统一调大（峰值 -1 dB）、转 AAC。时长异常的字会列出来，方便人工检查。
-运行：.venv/bin/python tools/voices_post.py
+运行：.venv/bin/python tools/voices_post.py [--new]（--new：只处理还没有 m4a 的字）
 """
 import os, struct, subprocess, sys, tempfile, wave
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -27,7 +27,9 @@ def process(ch):
 
 if __name__ == '__main__':
     os.makedirs(DST, exist_ok=True)
-    chars = sorted(f[:-4] for f in os.listdir(SRC) if f.endswith('.wav'))
+    chars = sorted(f[:-4] for f in os.listdir(SRC) if f.endswith('.wav') and len(f) == 5)
+    if '--new' in sys.argv:
+        chars = [c for c in chars if not os.path.exists(os.path.join(DST, f'{ord(c):x}.m4a'))]
     lens = {}
     for c in chars:
         lens[c] = process(c)
