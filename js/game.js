@@ -499,7 +499,28 @@ function sfx(k){
   } catch (e) {}
 }
 const canSpeak = 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
+// Recorded pronunciation (a little girl's voice, tools/voices.py) for the 300 built-in characters: sounds/zi/<code point>.m4a.
+// Characters without a recording (e.g. from an uploaded list) fall back to the device's speech voice.
+const hasVoice = ch => typeof HINTS !== 'undefined' && !!HINTS[ch];
+const voiceBufs = {}; let voiceSrc = null;
+function loadVoice(ch){
+  if (!voiceBufs[ch]) voiceBufs[ch] = fetch(`sounds/zi/${ch.codePointAt(0).toString(16)}.m4a`).then(r => { if (!r.ok) throw 0; return r.arrayBuffer(); })
+    .then(b => new Promise((res, rej) => AC.decodeAudioData(b, res, rej))).catch(() => null);
+  return voiceBufs[ch];
+}
 function say(t){
+  if (!t) return;
+  if (hasVoice(t) && ac()){
+    try { if (voiceSrc) voiceSrc.stop(); } catch (e) {}
+    loadVoice(t).then(buf => {
+      if (!buf){ speak(t); return; }
+      const src = AC.createBufferSource(); src.buffer = buf; src.connect(AC.destination); src.start(); voiceSrc = src;
+    });
+    return;
+  }
+  speak(t);
+}
+function speak(t){
   if (!canSpeak || !t) return;
   try {
     speechSynthesis.cancel();
@@ -527,6 +548,7 @@ function settleScroll(max = 1200){
   });
 }
 async function card(o){
+  if (o.zi && hasVoice(o.zi) && ac()) loadVoice(o.zi);   // start loading the pronunciation while the card opens
   await settleScroll();
   touch();
   return new Promise(res => {
@@ -542,7 +564,7 @@ async function card(o){
       ${o.text ? `<p>${esc(o.text)}</p>` : ''}
       ${o.hintP ? `<button type="button" class="btn soft hintbtn" data-hint="1" ${o.hintP.hints !== 0 ? '' : 'disabled'}>${hintLabel(o.hintP)}</button>` : ''}
       <div class="row">${o.btns.map(([k, l, c]) => `<button type="button" class="btn ${c || (o.btns.length === 1 ? 'primary' : '')} ${o.btns.length === 1 ? 'big' : ''}" data-k="${k}">${l}</button>`).join('')}</div>
-      ${o.speak && canSpeak ? `<button type="button" class="link" data-say="1">🔊 ${L('听读音', 'Hear it')}</button>` : ''}</div>`;
+      ${o.speak && (canSpeak || hasVoice(o.zi)) ? `<button type="button" class="link" data-say="1">🔊 ${L('听读音', 'Hear it')}</button>` : ''}</div>`;
     const shownAt = performance.now();
     let done = false;
     const finish = k => { if (done) return; done = true; touch(); fadeCardSounds(); ov.remove(); res(k); };

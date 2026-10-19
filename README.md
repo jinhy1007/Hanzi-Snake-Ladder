@@ -79,3 +79,10 @@ carriage 由两段生成结果拼接；splash、boing、glide、gust（Universfi
 汉字卡、拼音和组词、读音仍是中文。小神兽玩家如果用的是默认名字，会显示英文名（比如 喵喵螈 → Axolo-meow）。
 文字都在 js/game.js：主题文字在 THEMES 的 t（中文）和 en（英文），其他地方用 L('中文', 'English')。
 英文字体：标题和按钮 Fredoka，说明文字 Andika（为初学认字的孩子设计），见 css/style.css 的 html[lang="en"]。
+
+## 汉字发音
+
+常用 300 字的发音是一个小女孩的声音（Kie.ai 上的 Gemini 3.1 Flash 配音，每个字单独生成，多音字按 js/hints.js 的拼音读），
+存在 sounds/zi/<字的 Unicode 码位>.m4a（比如「水」是 6c34.m4a），一共约 3.5 MB。
+生成：tools/voices.py --all（已有的会跳过）；后期处理（去静音、统一音量、转码）：tools/voices_post.py。
+不在这 300 个里的字（比如上传的字库）用设备自带的语音。
