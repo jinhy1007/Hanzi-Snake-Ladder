@@ -278,7 +278,7 @@ function libChars(){ return S.lib === 'mine' ? (S.mine.chars || []) : commonChar
 function drawBoard(){
   const lib = libChars();
   if (lib.length < 8){ S.board = null; return; }
-  const chars = shuffleArr(lib.slice()).slice(0, Math.min(S.len, lib.length));
+  const chars = pickChars(lib, Math.min(S.len, lib.length));
   const pref = S.lib === 'mine' ? (S.mine.hard || []) : [];
   S.board = genBoard(chars, S.counts, pref);
 }
@@ -317,6 +317,70 @@ if (!COMMON.includes(S.common)) S.common = S.lib === 'mine' ? 'c300' : S.lib;
 if (S.lang !== 'en') S.lang = 'zh';
 document.documentElement.lang = S.lang === 'en' ? 'en' : 'zh-CN';
 if (!HINT_CHOICES.includes(S.hintN)) S.hintN = 3;
+/* ---------- learners: each child's progress, kept on this device (no accounts) ---------- */
+// A learner is a person, not a seat: a player seat links to a learner id (S.players[i].learner), so avatars and names
+// can change freely. Seats without a learner (grown-ups, friends) are not recorded.
+// LP.list: [{id, name, avatar}]; LP.stats[id]: {games, reads, chars: {字: {ok, hint, miss, last, m}}}
+//   ok = read right without help, hint = right with help (a hint, or the character was already read out earlier in
+//   this game), miss = not read, last = last seen (ms), m = mastered at (0 = not yet),
+//   rv = review step (index into REVIEW_DAYS), due = when the next review is due (ms), f = fully learned at (0 = not yet).
+const KEY_L = 'szsxq.learners.v1', MASTER_OK = 2, REVIEW_SHARE = 0.2, DAY = 864e5;
+// Spaced review of mastered characters: due 3 days after mastering, then 1 week, 3 weeks and 2 months after each
+// review read right without help. Passing the 2-month review = fully learned (🏅): no more reviews, and it only fills
+// a board when nothing else is left. A miss at any point sends the character back to "learning".
+const REVIEW_DAYS = [3, 7, 21, 60];
+let LP = load(KEY_L);
+if (!LP || !Array.isArray(LP.list) || !LP.stats || typeof LP.stats !== 'object') LP = {list: [], stats: {}};
+const saveL = () => store(KEY_L, LP);
+const learnerOf = id => (id && LP.list.find(l => l.id === id)) || null;
+const lstat = id => LP.stats[id] || (LP.stats[id] = {games: 0, reads: 0, chars: {}});
+const isMastered = (id, ch) => { const r = LP.stats[id] && LP.stats[id].chars[ch]; return !!(r && r.m); };
+const masteredCount = id => Object.values(lstat(id).chars).filter(r => r.m).length;
+const isFull = (id, ch) => { const r = LP.stats[id] && LP.stats[id].chars[ch]; return !!(r && r.m && r.f); };
+Object.values(LP.stats).forEach(st => Object.values(st.chars || {}).forEach(r => { if (r.m && !r.due){ r.rv = 0; r.due = r.m + REVIEW_DAYS[0] * DAY; } }));
+S.players.forEach(p => { if (p.learner && !learnerOf(p.learner)) p.learner = null; });
+// Right without a hint MASTER_OK times = mastered. Missing a mastered character sends it back to "learning".
+function recordRead(id, ch, ok, hinted){
+  if (!learnerOf(id)) return false;
+  const st = lstat(id), r = st.chars[ch] || (st.chars[ch] = {ok: 0, hint: 0, miss: 0, last: 0, m: 0});
+  let newly = false; st.reads++; r.last = Date.now();
+  const now = Date.now();
+  if (!ok){ r.miss++; if (r.m){ r.m = 0; r.ok = Math.min(r.ok, 1); r.rv = 0; r.due = 0; r.f = 0; } }
+  else if (hinted) r.hint++;
+  else {
+    r.ok++;
+    if (!r.m && r.ok >= MASTER_OK){ r.m = now; r.rv = 0; r.due = now + REVIEW_DAYS[0] * DAY; newly = true; }
+    else if (r.m && !r.f && now >= r.due){   // passed a review: wait longer next time, or fully learned after the last one
+      if ((r.rv || 0) >= REVIEW_DAYS.length - 1){ r.f = now; r.due = 0; }
+      else { r.rv = (r.rv || 0) + 1; r.due = now + REVIEW_DAYS[r.rv] * DAY; }
+    }
+  }
+  saveL(); return newly;
+}
+function newLearner(name, avatar){
+  const l = {id: 'L' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: String(name || '').trim().slice(0, 8) || L('小朋友', 'Learner'), avatar};
+  LP.list.push(l); lstat(l.id); saveL(); return l;
+}
+function listSummary(id, chars){
+  const st = LP.stats[id]; let m = 0, l = 0, f = 0;
+  chars.forEach(c => { const r = st && st.chars[c]; if (r){ if (r.m){ m++; if (r.f) f++; } else l++; } });
+  return {m, l, f, n: chars.length - m - l, total: chars.length};
+}
+// Characters for a new board: mostly ones the learners at the table haven't mastered yet, plus mastered ones whose
+// review is due (most overdue first, up to REVIEW_SHARE of the board). If the list runs out of unmastered characters,
+// the board is filled with the mastered ones due soonest. Without learners: a random pick, as before.
+function pickChars(lib, n){
+  const ids = [...new Set(S.players.map(p => p.learner).filter(learnerOf))];
+  if (!ids.length) return shuffleArr(lib.slice()).slice(0, n);
+  const done = c => ids.every(id => isMastered(id, c)), full = c => ids.every(id => isFull(id, c));
+  const due = c => Math.min(...ids.map(id => isFull(id, c) ? Infinity : LP.stats[id].chars[c].due || 0));
+  const fresh = shuffleArr(lib.filter(c => !done(c))), now = Date.now();
+  // mastered but still in review (soonest due first), then fully learned ones as the very last filler
+  const old = lib.filter(c => done(c) && !full(c)).sort((a, b) => due(a) - due(b)).concat(shuffleArr(lib.filter(full)));
+  const nDue = old.filter(c => due(c) <= now).length;
+  const nOld = Math.min(old.length, Math.max(n - fresh.length, Math.min(nDue, Math.round(n * REVIEW_SHARE))));
+  return shuffleArr(fresh.slice(0, n - nOld).concat(old.slice(0, nOld)));
+}
 if (S.ver !== SETTINGS_VER){ S.counts = defaultCounts(S.len); S.ver = SETTINGS_VER; S.board = null; }
 if (!S.board || !Array.isArray(S.board.cells)) { drawBoard(); }
 let G = load(KEY_G);
@@ -326,7 +390,7 @@ const saveG = () => store(KEY_G, G);
 saveS();
 
 let screen = (G && G.active) ? 'game' : 'setup';
-let ui = { openAv:-1, pasting:false, libMsg:'', libErr:'' };
+let ui = { openAv:-1, openWho:-1, pasting:false, libMsg:'', libErr:'', progId:null, progLib:null };
 let busy = false;
 
 /* ---------- sound & speech ---------- */
@@ -647,7 +711,7 @@ async function card(o){
     const who = o.who ? `<div class="who"><span class="mini" style="--pc:${o.who.color}">${avHTML(o.who.avatar)}</span>${esc(nm(o.who))}</div>` : '';
     ov.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${who}
       ${o.img ? art(o.img, 'cardpic') : o.emo ? `<div class="big-emo">${o.emo}</div>` : ''}
-      ${o.title ? `<h3>${esc(o.title)}</h3>` : ''}
+      ${o.title ? `<h3>${esc(o.title)}</h3>` : ''}${o.html || ''}
       ${o.zi && o.hintP ? `<div class="flip" data-flip="1"><div class="flip-in"><div class="tzg face front"><span>${esc(o.zi)}</span></div><div class="face back"></div></div></div>`
         : o.learn ? learnHTML(o.zi, o.learn)
         : o.zi ? `<div class="tzg"><span>${esc(o.zi)}</span></div>` : ''}
@@ -753,7 +817,7 @@ async function useHint(ov, o, fromBtn){
     btn.textContent = on ? L('🔄 翻回汉字', '🔄 Flip back') : L('💡 再看一下提示', '💡 See the hint again'); return;
   }
   if (!fromBtn || p.hints === 0 || flip.dataset.loading) return;
-  flip.dataset.loading = '1'; if (p.hints > 0) p.hints--; saveG(); renderStatus(); sfx('flip');
+  flip.dataset.loading = '1'; cardHinted = true; if (p.hints > 0) p.hints--; saveG(); renderStatus(); sfx('flip');
   const d = await hintData(o.zi);
   flip.querySelector('.back').innerHTML = hintBody(o.zi, d);
   flip.dataset.shown = '1'; delete flip.dataset.loading;
@@ -786,9 +850,14 @@ function renderSetup(){
   const players = S.players.map((p, i) => `
     <div class="prow" style="--pc:${COLORS[i]}">
       <button type="button" class="avbtn" data-act="pickav" data-i="${i}" aria-label="${L('换头像', 'Change avatar')}">${avHTML(p.avatar)}</button>
-      <input id="pname-${i}" data-i="${i}" maxlength="8" value="${esc(nm(p))}" aria-label="${L(`玩家${i + 1}的名字`, `Player ${i + 1} name`)}" autocomplete="off">
+      <div class="pcol"><input id="pname-${i}" data-i="${i}" maxlength="8" value="${esc(nm(p))}" aria-label="${L(`玩家${i + 1}的名字`, `Player ${i + 1} name`)}" autocomplete="off">
+        ${(l => `<button type="button" class="who-chip ${l ? 'track' : 'off'}" data-act="who" data-i="${i}" aria-expanded="${ui.openWho === i}">${l ? L(`📈 记录${esc(l.name)}的进度`, `📈 Tracking ${esc(l.name)}`) : L('👤 不记录进度', '👤 Not tracked')} ▾</button>`)(learnerOf(p.learner))}</div>
       <button type="button" class="x" data-act="delp" data-i="${i}" aria-label="${L('去掉这个玩家', 'Remove this player')}" ${S.players.length <= 1 ? 'disabled' : ''}>✕</button>
     </div>
+    ${ui.openWho === i ? `<div class="picker">
+      <button type="button" data-act="setwho" data-i="${i}" data-v="" class="${p.learner ? '' : 'on'}">👤 ${L('不记录', 'Don\'t track')}<small>${L('家长、朋友，或者只是玩一玩', 'Grown-ups, friends, or just for fun')}</small></button>
+      ${LP.list.map(l => { const taken = S.players.some((q, j) => j !== i && q.learner === l.id); return `<button type="button" data-act="setwho" data-i="${i}" data-v="${l.id}" class="${p.learner === l.id ? 'on' : ''}" ${taken ? 'disabled' : ''}>📈 ${esc(l.name)}<small>${taken ? L('已经在别的位置上', 'Already playing in another seat') : L(`已掌握 ${masteredCount(l.id)} 个字`, `${masteredCount(l.id)} characters mastered`)}</small></button>`; }).join('')}
+      <button type="button" data-act="setwho" data-i="${i}" data-v="new">＋ ${L(`新学习者：${esc(nm(p))}`, `New learner: ${esc(nm(p))}`)}<small>${L('用这个名字开始记录进度（以后头像、名字随便换）', 'Start tracking under this name (avatar and name can change later)')}</small></button></div>` : ''}
     ${ui.openAv === i ? `<div class="avpick"><div class="avcre">${CREATURE_AVS.map(a => { const c = creatureOf(a); return `<button type="button" data-act="setav" data-i="${i}" data-av="${a}" class="${a === p.avatar ? 'on' : ''}" ${a !== p.avatar && takenAv.includes(a) ? 'disabled' : ''}>${avHTML(a)}<b>${EN() ? c.en : c.zh}</b><small>${EN() ? c.zh : c.en}</small></button>`; }).join('')}</div></div>` : ''}`).join('');
   const stepper = (k, label) => {
     const v = !b ? 0 : k === 'bridge' ? b.bridges.length : k === 'uni' ? b.cells.filter(c => c.uni).length : S.counts[k];
@@ -822,9 +891,10 @@ function renderSetup(){
       <span class="topbtns"><button type="button" class="icon-btn" data-act="feedback" aria-label="${L('意见反馈', 'Feedback')}" title="${L('意见反馈', 'Feedback')}">💬</button>${langBtn()}<button type="button" class="icon-btn" data-act="mute" aria-label="${L('声音开关', 'Sound on/off')}">${S.mute ? '🔇' : '🔊'}</button></span></header>
     ${G && G.active ? `<button type="button" class="btn primary wide" data-act="resume">▶ ${L('继续上一局', 'Continue last game')}</button>` : ''}
     <section class="panel"><h2>${L('谁来玩？', 'Who\'s playing?')}</h2>
-      <p class="note">${L('点头像可以换一个喜欢的人物。', 'Tap an avatar to pick your favourite creature.')}</p>
+      <p class="note">${L('点头像可以换一个喜欢的人物。', 'Tap an avatar to pick your favourite creature.')}${LP.list.length ? '' : L('<br>📈 新功能：点名字下面的「不记录进度」，可以开始记录小朋友认字的进度。', '<br>📈 New: tap "Not tracked" under a name to start tracking a child\'s progress.')}</p>
       ${players}
       ${S.players.length < 6 ? `<button type="button" class="btn soft" data-act="addp">＋ ${L('加一个玩家', 'Add a player')}</button>` : ''}
+      ${LP.list.length ? `<button type="button" class="btn soft progbtn" data-act="progress">📈 ${L('学习进度', 'Progress')}<span>${LP.list.map(l => esc(l.name)).join(' · ')}</span></button>` : ''}
     </section>
     ${libPanel}
     <section class="panel"><h2>${L('棋盘', 'Board')}</h2>
@@ -863,6 +933,55 @@ function renderSetup(){
     </section>
     <footer class="foot"><button type="button" class="link" data-act="feedback">💬 ${L('意见反馈', 'Send feedback')}</button>
       <p>${L('本网站只统计匿名的访问次数，不收集个人信息。', 'We only count anonymous visits — no personal information is collected.')}</p></footer>`;
+}
+
+/* ---------- progress page: one learner at a time ---------- */
+function zStatus(id, ch){
+  const r = LP.stats[id] && LP.stats[id].chars[ch];
+  if (!r) return L('还没在棋盘上见过这个字。', 'Not seen on a board yet.');
+  const n = L(`读对 ${r.ok + r.hint} 次（不用提示 ${r.ok} 次），没读出来 ${r.miss} 次。`, `Read right ${r.ok + r.hint}× (${r.ok}× without a hint), missed ${r.miss}×.`);
+  const days = r.m ? Math.ceil(((r.due || 0) - Date.now()) / DAY) : 0;
+  const next = !r.m ? '' : days <= 0 ? L('该复习了。', 'Due for review. ') : L(`${days} 天后复习。`, `Review in ${days} day${days === 1 ? '' : 's'}. `);
+  if (r.f) return L('🏅 牢牢记住了！不用再复习。', '🏅 Fully learned — no more reviews needed. ') + n;
+  return (r.m ? L('⭐ 已掌握，', '⭐ Mastered. ') + next : L(`正在学：不用提示再读对 ${Math.max(1, MASTER_OK - r.ok)} 次就掌握了。`, `Learning: ${Math.max(1, MASTER_OK - r.ok)} more right without a hint to master it. `)) + n;
+}
+function renderProgress(){
+  const l = learnerOf(ui.progId) || LP.list[0];
+  if (!l){ screen = 'setup'; renderSetup(); return; }
+  ui.progId = l.id;
+  const st = lstat(l.id);
+  const lists = [['c300', L('300 字', '300')], ['c500', L('500 字', '500')], ['c1000', L('1000 字', '1000')]].concat((S.mine.chars || []).length ? [['mine', L('我的字库', 'My list')]] : []);
+  const lib = lists.some(x => x[0] === ui.progLib) ? ui.progLib : (lists.some(x => x[0] === S.lib) ? S.lib : 'c300');
+  const chars = lib === 'mine' ? S.mine.chars : commonChars(lib);
+  const sm = listSummary(l.id, chars), all = Object.entries(st.chars), week = Date.now() - 7 * 864e5;
+  const weekNew = all.filter(([, r]) => r.m > week).length, dueN = chars.filter(c => { const r = st.chars[c]; return r && r.m && !r.f && r.due <= Date.now(); }).length;
+  const recent = all.filter(([, r]) => r.m).sort((a, b) => b[1].m - a[1].m).slice(0, 12).map(x => x[0]);
+  const hard = all.filter(([, r]) => !r.m && r.miss).sort((a, b) => b[1].miss - a[1].miss).slice(0, 12);
+  const C = 2 * Math.PI * 15.9, pct = sm.total ? sm.m / sm.total : 0;
+  const cls = c => { const r = st.chars[c]; return r ? (r.f ? 'f' : r.m ? 'm' : 'l') : 'n'; };
+  const zchip = c => `<button type="button" data-act="progz" data-v="${esc(c)}">${esc(c)}</button>`;
+  app.innerHTML = `
+    <header class="dash-top"><button type="button" class="icon-btn" data-act="progback" aria-label="${L('返回', 'Back')}">←</button>
+      <span class="dav">${avHTML(l.avatar)}</span>
+      <div class="dname"><b>${esc(l.name)}</b><small>${L(`玩了 ${st.games} 局 · 读了 ${st.reads} 次`, `${st.games} game${st.games === 1 ? '' : 's'} · ${st.reads} reading${st.reads === 1 ? '' : 's'}`)}</small></div>
+      ${LP.list.length > 1 ? `<select id="progWho" aria-label="${L('换一个学习者', 'Switch learner')}">${LP.list.map(x => `<option value="${x.id}" ${x.id === l.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>` : ''}</header>
+    <section class="panel"><div class="seg wide ptabs">${lists.map(([k, n]) => `<button type="button" data-act="proglib" data-v="${k}" class="${k === lib ? 'on' : ''}">${n}</button>`).join('')}</div>
+      <div class="big">
+        <svg class="ring" viewBox="0 0 36 36" role="img" aria-label="${L(`已掌握 ${sm.m} / ${sm.total}`, `${sm.m} of ${sm.total} mastered`)}"><circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--soft)" stroke-width="3.6"/>
+          <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--leaf)" stroke-width="3.6" stroke-dasharray="${(C * pct).toFixed(2)} ${C.toFixed(2)}" stroke-linecap="round" transform="rotate(-90 18 18)"/>
+          <text x="18" y="18" text-anchor="middle" font-size="8.5" fill="var(--ink)">${sm.m}</text><text x="18" y="24" text-anchor="middle" font-size="3.6" fill="var(--ink-soft)">/ ${sm.total}</text></svg>
+        <div class="nums"><div><i class="dot m"></i>${L('已掌握', 'Mastered')} <b>${sm.m}</b></div><div><i class="dot l"></i>${L('正在学', 'Learning')} <b>${sm.l}</b></div>
+          <div><i class="dot n"></i>${L('还没见过', 'Not seen yet')} <b>${sm.n}</b></div>${sm.f ? `<div><i class="dot f"></i>${L(`其中牢牢记住 <b>${sm.f}</b> 🏅`, `<b>${sm.f}</b> fully learned 🏅`)}</div>` : ''}${dueN ? `<div>🔁 ${L(`该复习 <b>${dueN}</b> 个`, `<b>${dueN}</b> due for review`)}</div>` : ''}${weekNew ? `<div>${L(`这周新学会 <b>${weekNew}</b> 个 🎉`, `<b>${weekNew}</b> new this week 🎉`)}</div>` : ''}</div>
+      </div>
+      <div class="zgrid">${chars.map(c => `<button type="button" class="${cls(c)}" data-act="progz" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+      <p class="note">${L(`点一个字可以听读音、看组词。不用提示读对 ${MASTER_OK} 次就算掌握（这局已经有人读过的字不算）。掌握的字过 3 天、1 周、3 周、2 个月会回来复习，都读对就是 🏅 牢牢记住；读错就重新学。`, `Tap a character to hear it and see a word. Read right ${MASTER_OK} times without a hint = mastered (not counting characters someone already read out that game). Mastered characters come back for review after 3 days, 1 week, 3 weeks and 2 months — pass them all for 🏅 fully learned; a miss means learning it again.`)}</p>
+    </section>
+    ${recent.length || hard.length ? `<section class="panel">
+      ${recent.length ? `<h2>⭐ ${L('最近学会', 'Recently mastered')}</h2><div class="zchips">${recent.map(zchip).join('')}</div>` : ''}
+      ${hard.length ? `<h2>💪 ${L('常读错，多练练', 'Often missed — keep practising')}</h2><div class="zchips">${hard.map(([c, r]) => `<button type="button" data-act="progz" data-v="${esc(c)}">${esc(c)}<small>${L(`错 ${r.miss} 次`, `${r.miss}× missed`)}</small></button>`).join('')}</div>` : ''}
+    </section>` : ''}
+    <footer class="foot"><p>${L('进度只保存在这台设备的这个浏览器里。', 'Progress is saved only in this browser on this device.')}</p>
+      <div class="row"><button type="button" class="link" data-act="lrename">✏️ ${L('改名字', 'Rename')}</button><button type="button" class="link" data-act="ldelete">🗑️ ${L('删除这个学习者', 'Delete this learner')}</button></div></footer>`;
 }
 
 function rerenderSetupKeepScroll(){
@@ -1000,7 +1119,7 @@ if (STATS_CODE && !LOCAL){
 function track(name){
   try { if (STATS_CODE && !LOCAL && window.goatcounter && window.goatcounter.count) window.goatcounter.count({path: name, title: name, event: true}); } catch (e) {}
 }
-const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v47'].join(' · ');
+const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v51'].join(' · ');
 function openFeedback(){
   track('feedback');
   const ov = document.createElement('div'); ov.className = 'overlay';
@@ -1219,7 +1338,25 @@ async function resolve(pi){
   return false;
 }
 
-function readCard(p, ch, hint){
+// Every reading of a learner is recorded; G.got[learner] collects this game's characters for the end-of-game summary.
+let cardHinted = false;
+async function readCard(p, ch, hint){
+  cardHinted = false;
+  // Only a character's first reading in a game can count toward mastery: after that everyone has heard it
+  // (another player read it, or the "remember it" card played it), so a later right reading is recorded as helped.
+  const seen = G.seen || (G.seen = []), heard = seen.includes(ch);
+  const ok = await readCardRaw(p, ch, hint);
+  if (!heard) seen.push(ch);
+  if (p.learner && learnerOf(p.learner)){
+    const newly = recordRead(p.learner, ch, ok, cardHinted || heard);
+    const got = G.got || (G.got = {}), e = got[p.learner] || (got[p.learner] = {ok: [], newM: []});
+    if (ok && !e.ok.includes(ch)) e.ok.push(ch);
+    if (newly && !e.newM.includes(ch)) e.newM.push(ch);
+  }
+  saveG();
+  return ok;
+}
+function readCardRaw(p, ch, hint){
   // Listening mode: the game hears the reading, so there is no "hear it" button (it would give the answer away);
   // the pronunciation plays on the "remember it" card after a miss or after "I don't know".
   if (useVoice()) return card({who:p, zi:ch, text:hint, listen:true, hintP: G.hintsOn ? p : null, btns:[['no',L('🤔 我不会', '🤔 I don\'t know'),'soft']]}).then(k => k === 'yes');
@@ -1274,6 +1411,15 @@ async function nextTurn(){
   scrollToCell(G.players[G.turn].pos, true, true);
 }
 
+// After a game: what this learner read right, and which characters are newly mastered.
+function summaryCard(l, e){
+  const chars = libChars(), sm = listSummary(l.id, chars);
+  const title = e.ok.length ? L(`这局读对了 ${e.ok.length} 个字！`, `${e.ok.length} characters read right this game!`) : L('这局还没读对字，下次加油！', 'No characters this time — next time!');
+  const html = e.ok.length ? `<div class="sumz">${e.ok.slice(0, 16).map(c => `<span class="${e.newM.includes(c) ? 'new' : ''}">${esc(c)}</span>`).join('')}</div>` : '';
+  const text = (e.newM.length ? L(`⭐ 新掌握 ${e.newM.length} 个字：${e.newM.join('、')}。`, `⭐ ${e.newM.length} newly mastered: ${e.newM.join(' ')}. `) : '')
+    + L(`这个字库已掌握 ${sm.m} / ${sm.total}`, `Mastered in this list: ${sm.m} / ${sm.total}`);
+  return card({who: {name: l.name, avatar: l.avatar, color: 'var(--leaf)'}, title, html, text, btns: [['prog', L('📈 看进度', '📈 Progress'), 'soft'], ['ok', 'Okay', 'primary']]});
+}
 async function win(pi){
   const p = G.players[pi];
   p.pos = lastIdx();
@@ -1283,13 +1429,18 @@ async function win(pi){
   const k = await card({who:p, img:'win', title:wc.title, text:wc.text, btns:[['setup',L('🏠 返回主页', '🏠 Home'),'home big'],['again',L('🎲 再玩一局', '🎲 Play again'),'primary big']]});
   busy = false;
   drawBoard(); saveS();  // every new game gets fresh characters and freshly placed props, unicorns and doors
+  for (const [id, e] of Object.entries(G.got || {})){
+    const l = learnerOf(id); if (!l) continue;
+    if (await summaryCard(l, e) === 'prog'){ screen = 'progress'; ui.progId = id; render(); window.scrollTo(0, 0); return; }
+  }
   track(k === 'again' ? 'win/again' : 'win/home');
   if (k === 'again' && S.board) newGame(S.players, S.board);
   else { screen = 'setup'; render(); window.scrollTo(0, 0); }
 }
 
 function newGame(players, board){
-  G = { players: players.map((p, i) => ({name: (p.name || '').trim() || L(`玩家${i + 1}`, `Player ${i + 1}`), avatar: p.avatar, color: COLORS[i], pos:0, prev:0, skip:false, hints: !S.hints ? 0 : S.hintN === 'inf' ? -1 : S.hintN})),
+  players.forEach(p => { if (learnerOf(p.learner)) lstat(p.learner).games++; }); saveL();
+  G = { players: players.map((p, i) => ({name: (p.name || '').trim() || L(`玩家${i + 1}`, `Player ${i + 1}`), avatar: p.avatar, learner: learnerOf(p.learner) ? p.learner : null, color: COLORS[i], pos:0, prev:0, skip:false, hints: !S.hints ? 0 : S.hintN === 'inf' ? -1 : S.hintN})),
         board: JSON.parse(JSON.stringify(board)), hintsOn: !!S.hints, turn:0, winner:null, active:true, lastRoll:1, msg:'' };
   busy = false; saveG(); screen = 'game'; render();
   try { if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {}); } catch (e) {}
@@ -1311,7 +1462,31 @@ document.addEventListener('click', e => {
     case 'tile': openTile(i); return;
     case 'upload': openUploadHelp(); return;
     case 'feedback': openFeedback(); return;
-    case 'pickav': ui.openAv = ui.openAv === i ? -1 : i; break;
+    case 'pickav': ui.openAv = ui.openAv === i ? -1 : i; ui.openWho = -1; break;
+    case 'who': ui.openWho = ui.openWho === i ? -1 : i; ui.openAv = -1; break;
+    case 'setwho': {
+      const v = b.dataset.v, pl = S.players[i];
+      if (v === 'new') pl.learner = newLearner(nm(pl), pl.avatar).id;
+      else pl.learner = learnerOf(v) && !S.players.some((q, j) => j !== i && q.learner === v) ? v : null;
+      ui.openWho = -1; drawBoard(); break;   // a new board that suits who is playing
+    }
+    case 'progress': ui.progId = (learnerOf(ui.progId) || learnerOf((S.players.find(p => learnerOf(p.learner)) || {}).learner) || LP.list[0] || {}).id || null;
+      screen = 'progress'; render(); window.scrollTo(0, 0); return;
+    case 'progback': screen = 'setup'; render(); window.scrollTo(0, 0); return;
+    case 'proglib': ui.progLib = b.dataset.v; renderProgress(); return;
+    case 'progz': { const ch = b.dataset.v; (async () => card({zi: ch, learn: await hintData(ch), text: zStatus(ui.progId, ch), speak: true, autoSay: true, btns: [['ok', 'Okay']]}))(); return; }
+    case 'lrename': {
+      const l = learnerOf(ui.progId); if (!l) return;
+      const v = (prompt(L('新名字：', 'New name:'), l.name) || '').trim().slice(0, 8);
+      if (v){ l.name = v; saveL(); } renderProgress(); return;
+    }
+    case 'ldelete': {
+      const l = learnerOf(ui.progId); if (!l) return;
+      if (!confirm(L(`删除「${l.name}」和 TA 的全部学习进度？删除后不能恢复。`, `Delete "${l.name}" and all of their progress? This can't be undone.`))) return;
+      LP.list = LP.list.filter(x => x.id !== l.id); delete LP.stats[l.id]; saveL();
+      S.players.forEach(p => { if (p.learner === l.id) p.learner = null; }); saveS();
+      ui.progId = (LP.list[0] || {}).id || null; screen = LP.list.length ? 'progress' : 'setup'; render(); window.scrollTo(0, 0); return;
+    }
     case 'setav': {
       // picking a creature also names the player after it, unless the player already typed their own name
       const pl = S.players[i], prev = creatureOf(pl.avatar), next = creatureOf(b.dataset.av);
@@ -1373,6 +1548,7 @@ document.addEventListener('click', e => {
   saveS(); rerenderSetupKeepScroll();
 });
 document.addEventListener('change', e => {
+  if (e.target.id === 'progWho'){ ui.progId = e.target.value; renderProgress(); return; }
   if (e.target.id !== 'libSize') return;
   S.common = S.lib = e.target.value; ui.libErr = ''; ui.libMsg = ''; drawBoard(); saveS(); rerenderSetupKeepScroll();
 });
@@ -1386,6 +1562,7 @@ document.addEventListener('input', e => {
 
 function render(){
   if (screen === 'game' && G) renderGame();
+  else if (screen === 'progress' && LP.list.length) renderProgress();
   else { screen = 'setup'; renderSetup(); const pb = document.getElementById('pbox'); if (pb) pb.scrollTop = pb.scrollHeight; }
 }
 render();

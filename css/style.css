@@ -288,3 +288,43 @@ button.tile:active{transform:rotate(var(--rot)) scale(.93)}
 .seg button:disabled{opacity:.4}
 @media (prefers-reduced-motion: reduce){.listen .mic,.listen .mic.on{animation:none}}
 .sheet [hidden]{display:none!important}
+/* 学习者：谁在玩 */
+.pcol{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:5px}
+.pcol input{width:100%}
+.who-chip{font-family:var(--f-text);font-size:13px;border:none;border-radius:999px;padding:4px 10px;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.who-chip.track{background:#D9F3E3;color:var(--leaf-deep)}
+.who-chip.off{background:var(--soft);color:var(--ink-soft)}
+.picker{background:var(--white);border-radius:16px;box-shadow:0 6px 20px rgba(46,42,74,.18);padding:6px;margin:0 0 4px 74px;display:flex;flex-direction:column;gap:2px}
+.picker button{font-family:var(--f-text);font-size:15px;text-align:left;border:none;background:none;padding:9px 10px;border-radius:10px;cursor:pointer;color:var(--ink)}
+.picker button.on{background:var(--soft)}
+.picker button:disabled{opacity:.45;cursor:default}
+.picker small{display:block;color:var(--ink-soft);font-size:12px}
+.progbtn{display:flex;align-items:center;gap:10px;width:100%}
+.progbtn span{margin-left:auto;font-family:var(--f-text);font-size:13px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 一局结束的小结 */
+.sumz{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.sumz span{font-family:var(--f-zi);font-size:28px;width:48px;height:48px;display:grid;place-items:center;background:var(--white);border-radius:12px;box-shadow:0 2px 0 var(--line);position:relative}
+.sumz span.new::after{content:'⭐';position:absolute;top:-9px;right:-9px;font-size:16px}
+/* 学习进度页 */
+.dash-top{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.dash-top .dav{width:56px;height:56px;flex:none;display:grid;place-items:center}
+.dash-top .dname{min-width:0}
+.dash-top .dname b{font-weight:400;font-size:24px;display:block}
+.dash-top .dname small{font-family:var(--f-text);font-size:13px;color:var(--ink-soft)}
+.dash-top select{margin-left:auto;font-family:var(--f-text);font-size:14px;border:2px solid var(--line);border-radius:12px;padding:6px 8px;background:var(--white);color:var(--ink)}
+.ptabs{margin-bottom:12px}
+.big{display:flex;align-items:center;gap:16px;margin-bottom:12px}
+.ring{width:112px;height:112px;flex:none}
+.ring text:first-of-type{font-family:var(--f-ui)}
+.nums{font-family:var(--f-text);font-size:14px;color:var(--ink-soft);line-height:1.8}
+.nums b{color:var(--ink);font-size:17px}
+.dot{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.dot.m,.zgrid .m{background:#9EDDB6}.dot.l,.zgrid .l{background:#FFE08A}.dot.n,.zgrid .n{background:#ECE6F4}
+.zgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(30px,1fr));gap:3px}
+.zgrid button{aspect-ratio:1;border:none;border-radius:5px;font-family:var(--f-zi);font-size:18px;padding:0;cursor:pointer;color:var(--ink)}
+.zgrid .n{color:#B5ADC9}
+.zchips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
+.zchips button{font-family:var(--f-zi);font-size:26px;border:none;background:var(--white);border-radius:12px;padding:3px 12px;box-shadow:0 2px 0 var(--line);cursor:pointer;color:var(--ink)}
+.zchips small{font-family:var(--f-text);font-size:11px;color:var(--red-deep);margin-left:4px}
+.foot .row{display:flex;justify-content:center;gap:8px;margin-top:6px}
+.dot.f,.zgrid .f{background:#3FB873}.zgrid .f{color:#fff}
