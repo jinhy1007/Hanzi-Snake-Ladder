@@ -14,6 +14,12 @@ const creatureOf = a => typeof a === 'string' && a.startsWith('c:') ? CREATURES[
 const avHTML = a => creatureOf(a) ? `<img class="avimg" src="images/avatars/${a.slice(2)}.webp" alt="${creatureOf(a).zh}" draggable="false">` : esc(a || '🙂');
 const LIMITS = {dragon:[0,4], mush:[0,4], coach:[0,4], bridge:[0,5], uni:[0,8]};
 const LENS = [20, 28, 36];
+// Each board length is shown to players as a theme to pick (the long board is the sports-day map).
+const BOARD_CHOICES = {
+  20: {zh:'童话森林', en:'Fairy Forest', subZh:'短途', subEn:'Short', img:'images/props/castle.webp'},
+  28: {zh:'童话森林', en:'Fairy Forest', subZh:'长途', subEn:'Long', img:'images/props/castle.webp'},
+  36: {zh:'动物运动会', en:'Animal Sports Day', subZh:'', subEn:'', img:'images/props/sports/theme.webp'}
+};
 const KEY_S = 'szsxq.settings.v2', KEY_G = 'szsxq.game.v2';
 const RM = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
 
@@ -650,7 +656,9 @@ function renderSetup(){
         ${ui.pasting ? `<textarea id="pasteIn" aria-label="${L('粘贴汉字', 'Paste characters')}" placeholder="${L('把要练的汉字粘贴到这里', 'Paste the characters to practise here')}">${esc((S.mine.chars || []).join(''))}</textarea>
           <div class="row"><button type="button" class="btn" data-act="pastecancel">${L('取消', 'Cancel')}</button><button type="button" class="btn primary" data-act="pastesave">${L('保存字库', 'Save list')}</button></div>` : ''}` : ''}
       ${ui.libErr ? `<p class="err">${esc(ui.libErr)}</p>` : ''}${ui.libMsg ? `<p class="ok">${esc(ui.libMsg)}</p>` : ''}
-      <div class="lbl-row"><span>${L('棋盘长度', 'Board length')}</span><div class="seg">${LENS.map((n, i) => `<button type="button" data-act="len" data-v="${n}" class="${S.len === n ? 'on' : ''}">${EN() ? `${['Short','Medium','Long'][i]} ${n}` : `${['短','中','长'][i]} ${n}字`}</button>`).join('')}</div></div>
+      <div class="themes-h">${L('选主题', 'Choose a theme')}</div>
+      <div class="themes">${LENS.map(n => { const o = BOARD_CHOICES[n]; return `<button type="button" data-act="len" data-v="${n}" class="theme ${S.len === n ? 'on' : ''}">
+        <img src="${o.img}" alt="" draggable="false"><b>${EN() ? o.en : o.zh}</b>${(EN() ? o.subEn : o.subZh) ? `<i>${EN() ? o.subEn : o.subZh}</i>` : ''}<span>${L(`${n} 个字`, `${n} characters`)}</span></button>`; }).join('')}</div>
     </section>`;
   app.innerHTML = `
     <header class="top"><h1 class="logo">${L('识字蛇形棋', 'Hanzi Snakes & Ladders')}<small>${t.subtitle}</small></h1>
