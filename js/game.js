@@ -613,7 +613,7 @@ function speak(t){
 
 /* ---------- listening: the game hears the player read (Web Speech API; tested in lab/voice-test.html) ---------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-const canListen = !!SR && window.isSecureContext;
+const canListen = (!!SR || !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) && window.isSecureContext;   // Azure only needs the microphone
 let voiceBroken = false;   // voiceBroken: mic or recognition failed this session → parents judge instead
 const useVoice = () => canListen && !voiceBroken && checkMode() === 'voice';
 const DIGITS = {'0':'零','1':'一','2':'二','3':'三','4':'四','5':'五','6':'六','7':'七','8':'八','9':'九','10':'十','100':'百','1000':'千','10000':'万'};
@@ -662,8 +662,76 @@ async function voiceWatch(onQuiet){
   return () => { stopped = true; cancelAnimationFrame(raf); try { st && st.getTracks().forEach(t => t.stop()); } catch (e) {} try { ctx && ctx.close(); } catch (e) {} };
 }
 // Listen once for `ch`. Resolves {v, alts} or {err}. onStop receives a function that stops listening early.
+/* Azure pronunciation assessment (much better at single characters than the browser's recognizer): the game says which
+   character should be read, Azure scores how well it was said. A tiny Cloudflare Worker (worker/speech-token.js) hands
+   out 10-minute tokens so the Azure key never reaches the browser. If Azure can't be reached, the browser's recognizer
+   below takes over. */
+const SPEECH_TOKEN_URL = 'https://hanzi-speech-token.jinhy1007.workers.dev';
+const AZ_SDK = 'https://cdn.jsdelivr.net/npm/microsoft-cognitiveservices-speech-sdk@1.44.0/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle-min.js';
+const AZ_OK = 80, AZ_HALF = 60;   // accuracy score (0–100): from AZ_OK ✅, from AZ_HALF 🟡, below ❌
+let azTok = null, azDownUntil = 0, azSdk = null;
+function loadAzure(){
+  if (!azSdk) azSdk = new Promise((res, rej) => {
+    if (window.SpeechSDK) return res(window.SpeechSDK);
+    const sc = document.createElement('script'); sc.src = AZ_SDK;
+    sc.onload = () => window.SpeechSDK ? res(window.SpeechSDK) : rej(new Error('no SpeechSDK'));
+    sc.onerror = () => { azSdk = null; rej(new Error('sdk load failed')); };
+    document.head.appendChild(sc);
+  });
+  return azSdk;
+}
+async function azToken(){
+  if (azTok && Date.now() - azTok.at < 8 * 60e3) return azTok;
+  const r = await fetch(SPEECH_TOKEN_URL, {cache: 'no-store'});
+  if (!r.ok) throw new Error('token ' + r.status);
+  const j = await r.json(); if (!j.token) throw new Error('no token');
+  azTok = {token: j.token, region: j.region, at: Date.now()}; return azTok;
+}
+// Resolves {v, alts, score}, {err}, or {fallback: true} when Azure isn't available (then the browser recognizer is used).
+async function azureListen(ch, py, P, onStop){
+  if (Date.now() < azDownUntil) return {fallback: true};
+  let sdk, tok;
+  try { [sdk, tok] = await Promise.all([loadAzure(), azToken()]); }
+  catch (e) { azDownUntil = Date.now() + 5 * 60e3; return {fallback: true}; }   // try Azure again in 5 minutes
+  return new Promise(res => {
+    let rec = null, done = false;
+    const end = r => { if (done) return; done = true; micBusy = false; try { rec && rec.close(); } catch (e) {} res(r); };
+    try {
+      micBusy = true;
+      try { if (navigator.audioSession) navigator.audioSession.type = 'auto'; } catch (e) {}
+      const cfg = sdk.SpeechConfig.fromAuthorizationToken(tok.token, tok.region);
+      cfg.speechRecognitionLanguage = 'zh-CN';
+      cfg.setProperty(sdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, '6000');
+      cfg.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, '700');
+      cfg.setProperty(sdk.PropertyId.Speech_SegmentationSilenceTimeoutMs, '700');
+      rec = new sdk.SpeechRecognizer(cfg, sdk.AudioConfig.fromDefaultMicrophoneInput());
+      const pa = new sdk.PronunciationAssessmentConfig(ch, sdk.PronunciationAssessmentGradingSystem.HundredMark, sdk.PronunciationAssessmentGranularity.Phoneme, false);
+      pa.applyTo(rec);
+      onStop && onStop(() => end({err: 'aborted'}), () => end({err: 'aborted'}));
+      rec.recognizeOnceAsync(result => {
+        if (result.reason === sdk.ResultReason.RecognizedSpeech){
+          const text = (result.text || '').replace(/[。，！？.,!?\s]/g, '');
+          let score = 0; try { score = Math.round(sdk.PronunciationAssessmentResult.fromResult(result).accuracyScore || 0); } catch (e) {}
+          // the recognized text can settle it (same or same-sounding character, e.g. for characters with two readings)
+          let v = judgeReading(ch, py, P, [text]);
+          if (v !== 'ok' && score >= AZ_OK) v = 'ok';
+          else if (v === 'bad' && score >= AZ_HALF) v = 'half';
+          end({v, alts: [text || '?'], score});
+        } else if (result.reason === sdk.ResultReason.NoMatch) end({err: 'unclear'});
+        else {
+          const c = sdk.CancellationDetails.fromResult(result), why = String(c && c.errorDetails || '');
+          if (/permission|NotAllowed|denied/i.test(why)) end({err: 'not-allowed'});
+          else { azTok = null; azDownUntil = Date.now() + 60e3; end({fallback: true}); }
+        }
+      }, err => { azTok = null; azDownUntil = Date.now() + 60e3; end(/permission|NotAllowed|denied/i.test(String(err)) ? {err: 'not-allowed'} : {fallback: true}); });
+    } catch (e) { end({fallback: true}); }
+  });
+}
 async function listenFor(ch, onStop){
   const [P, d] = await Promise.all([loadPinyin().catch(() => null), hintData(ch)]);
+  const az = await azureListen(ch, d.py || '', P, onStop);
+  if (!az.fallback) return az;
+  if (!SR) return {err: 'service-not-allowed'};
   const py = d.py || '';
   return new Promise(res => {
     let rec, done = false, partial = [], stopT = null;
@@ -750,7 +818,7 @@ async function card(o){
         ov.querySelector('.manual').hidden = false; ov.querySelector('.listen + .manual + .row').hidden = true; return;
       }
       if (r.v === 'ok'){ btn.classList.add('ok'); lmsg(L('✅ 读对了！', '✅ You got it!'), 'ok'); await sleep(750); finish('yes'); return; }
-      tries++; heard(r.alts[0]);
+      tries++; heard(r.alts[0] + (r.score != null ? L(` · ${r.score} 分`, ` · score ${r.score}`) : ''));
       if (r.v === 'half'){   // almost right (tone or a similar sound): passes, and the right pronunciation plays
         say(o.zi); lmsg(L('🟡 差不多，算你读对了！听听标准读音', '🟡 Close enough! Listen to how it sounds'), 'half'); await sleep(1900); finish('yes'); return;
       }
@@ -913,7 +981,7 @@ function renderSetup(){
         <button type="button" data-act="check" data-v="parent" class="${checkMode() === 'parent' || !canListen ? 'on' : ''}">👨‍👩‍👧 ${L('家长判断', 'A grown-up')}</button>
         <button type="button" data-act="check" data-v="voice" class="${checkMode() === 'voice' && canListen ? 'on' : ''}" ${canListen ? '' : 'disabled'}>🎤 ${L('游戏来听', 'The game listens')}</button></div>
       <p class="note">${!canListen ? L('这个浏览器不能自动听读音，由家长判断。想让游戏来听，请用 iPhone / iPad 的 Safari，或电脑上的 Chrome、Edge、Safari。', 'This browser can\'t listen, so a grown-up judges. For listening, use Safari on iPhone/iPad, or Chrome, Edge or Safari on a computer.')
-        : checkMode() === 'voice' ? L('小朋友点 🎤 读出来，游戏会听读得对不对，一个人也能玩。单个字不容易听准，有时要多读一次。第一次会问能不能用麦克风，请点「允许」。声音只交给浏览器的语音识别（Apple 或 Google）听一下，我们不录音、不保存。', 'Kids tap 🎤 and read out loud; the game checks the reading, so they can play on their own. Single characters are hard to hear, so sometimes they\'ll need to read twice. The first time, allow the microphone. The voice only goes to the browser\'s speech recognition (Apple or Google); we don\'t record or keep it.')
+        : checkMode() === 'voice' ? L('小朋友点 🎤 读出来，游戏会听读得对不对，一个人也能玩。单个字不容易听准，有时要多读一次。第一次会问能不能用麦克风，请点「允许」。声音交给微软 Azure 的读音评测打分（连不上时用浏览器自带的语音识别），我们不录音、不保存。', 'Kids tap 🎤 and read out loud; the game checks the reading, so they can play on their own. Single characters are hard to hear, so sometimes they\'ll need to read twice. The first time, allow the microphone. The voice is scored by Microsoft Azure\'s pronunciation assessment (or the browser\'s own speech recognition if Azure can\'t be reached); we don\'t record or keep it.')
         : L('读完后由家长点「读对了」或「没读出来」，卡片上可以听标准读音。小朋友一个人玩，或者家长不会中文时，可以选「🎤 游戏来听」。', 'After reading, a grown-up taps "Got it" or "Not yet" (the card can play the pronunciation). If the kid plays alone, or the grown-up doesn\'t read Chinese, choose "🎤 The game listens".')}</p>
     </section>
     <section class="panel"><h2>${L('提示卡', 'Hint cards')}</h2>
@@ -1129,7 +1197,7 @@ if (STATS_CODE && !LOCAL){
 function track(name){
   try { if (STATS_CODE && !LOCAL && window.goatcounter && window.goatcounter.count) window.goatcounter.count({path: name, title: name, event: true}); } catch (e) {}
 }
-const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v54'].join(' · ');
+const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v55'].join(' · ');
 function openFeedback(){
   track('feedback');
   const ov = document.createElement('div'); ov.className = 'overlay';

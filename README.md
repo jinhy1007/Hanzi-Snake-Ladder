@@ -135,3 +135,11 @@ Chrome/Edge 上另外看麦克风音量，读完 0.6 秒就停止，不用等背
 - 摆新棋盘时，大部分是在座学习者还没掌握的字，再加上到期该复习的字（最多约 20%，REVIEW_SHARE，最过期的先上）。
 - 一局结束后有一张小结卡（每个学习者这局读对的字、新掌握的字）；「📈 学习进度」页面有掌握圆环、字表格子（绿 = 已掌握，
   黄 = 正在学，灰 = 还没见过）、最近学会、常读错，可以改名字或删除学习者。
+
+### Azure 读音评测（游戏来听的主力）
+
+「游戏来听」先用微软 Azure 的 Pronunciation Assessment：告诉它这个字应该怎么读，它给读音打分（0–100）。
+识别出的字一样或同音 → ✅；否则分数 ≥ 80（AZ_OK）→ ✅，≥ 60（AZ_HALF）→ 🟡，更低 → ❌。卡片上「听到的是：… · N 分」方便调分数线。
+Azure 的密钥不放在网页里：Cloudflare Worker（代码在 worker/speech-token.js，地址 SPEECH_TOKEN_URL）用密钥换 10 分钟的临时凭证，
+只给本网站和本地预览用。Azure 资源：Speech services，免费 F0，区域 westus2；Worker 的变量 AZURE_KEY（Secret）、AZURE_REGION。
+连不上 Azure（比如公司网络挡住 workers.dev）时自动改用浏览器自带的语音识别，再不行就换成家长判断。
