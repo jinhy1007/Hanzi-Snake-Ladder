@@ -402,7 +402,13 @@ let AC = null;
 // Phones only allow sound after a tap, and iPhone Safari mutes Web Audio when the ring/silent switch is on.
 // So: ask for "playback" audio (Safari 16.4+), and on every tap create/resume the AudioContext and play a tiny silent sound.
 let micBusy = false;   // true while listening: leave the audio session alone so the microphone works (iPhone)
+// iPhone/iPad: after the microphone has been used, the old audio context can stay silent until the page is reloaded,
+// so the next sound starts a fresh one (decoded sounds are kept; they work in any context).
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+let audioStale = false;
+const micDone = () => { micBusy = false; if (IOS) audioStale = true; };
 function ac(){
+  if (audioStale && !micBusy){ audioStale = false; try { if (AC) AC.close(); } catch (e) {} AC = null; unlockedAudio = false; }
   try { if (!micBusy && navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch (e) {}
   if (!AC){ try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; } }
   if (AC && AC.state !== 'running') AC.resume().catch(() => {});
@@ -704,7 +710,7 @@ async function azureListen(ch, py, P, onStop){
     let rec = null, done = false, timer = null, live = '';
     const clean = t => String(t || '').replace(/[。，！？.,!?\s]/g, '');
     const end = r => {
-      if (done) return; done = true; clearTimeout(timer); micBusy = false;
+      if (done) return; done = true; clearTimeout(timer); micDone();
       try { rec.stopContinuousRecognitionAsync(() => rec.close(), () => rec.close()); } catch (e) { try { rec && rec.close(); } catch (e2) {} }
       res(r);
     };
@@ -749,7 +755,7 @@ async function listenFor(ch, onStop){
   return new Promise(res => {
     let rec, done = false, partial = [], stopT = null;
     let unwatch = null, spoke = false;
-    const end = r => { if (done) return; done = true; clearTimeout(stopT); micBusy = false; if (unwatch) unwatch(); try { rec.abort(); } catch (e) {} res(r); };
+    const end = r => { if (done) return; done = true; clearTimeout(stopT); micDone(); if (unwatch) unwatch(); try { rec.abort(); } catch (e) {} res(r); };
     const stopSoon = ms => { clearTimeout(stopT); stopT = setTimeout(() => { try { rec.stop(); } catch (e) {} }, ms); };
     try {
       micBusy = true;
@@ -1213,7 +1219,7 @@ if (STATS_CODE && !LOCAL){
 function track(name){
   try { if (STATS_CODE && !LOCAL && window.goatcounter && window.goatcounter.count) window.goatcounter.count({path: name, title: name, event: true}); } catch (e) {}
 }
-const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v60'].join(' · ');
+const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v61'].join(' · ');
 function openFeedback(){
   track('feedback');
   const ov = document.createElement('div'); ov.className = 'overlay';
