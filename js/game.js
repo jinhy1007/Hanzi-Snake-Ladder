@@ -668,7 +668,7 @@ async function voiceWatch(onQuiet){
    below takes over. */
 const SPEECH_TOKEN_URL = 'https://hanzi-speech-token.jinhy1007.workers.dev';
 const AZ_SDK = 'https://cdn.jsdelivr.net/npm/microsoft-cognitiveservices-speech-sdk@1.44.0/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle-min.js';
-const AZ_HALF = 60;   // accuracy score (0–100) at which a misheard reading still counts as 🟡 (correct readings scored 64–78 in tests)
+const AZ_HALF = 60;   // flagged as mispronounced but accuracy (0–100) at least this: a near miss, 🟡
 let azTok = null, azDownUntil = 0, azSdk = null;
 function loadAzure(){
   if (!azSdk) azSdk = new Promise((res, rej) => {
@@ -690,11 +690,11 @@ async function azToken(){
 // Resolves {v, alts, score}, {err}, or {fallback: true} when Azure isn't available (then the browser recognizer is used).
 // Continuous listening, stopped at the first result: Azure's "stop after silence" settings are rejected together with
 // pronunciation assessment (error 1007), and single-shot listening took 6–10 s (tested in lab/azure-test.html).
-// A live guess that is already the right character is accepted at once; otherwise the final result is judged by its
-// text, with the accuracy score as a safety net for characters the recognizer mishears.
-// Off for now: with the expected character given to Azure, its guesses lean toward that character, so wrong readings
-// passed too (吗 read as 块 → "吗"). Back on once miscue detection is tested in lab/azure-test.html (variant M).
-const AZURE_ON = false;
+// Azure is told which character to expect, so the text it returns always leans toward that character ("吗" even
+// when 块 was read). With miscue detection on, it flags wrong readings instead (lab/azure-test.html, variant M):
+// correct readings came back ErrorType None (accuracy 68–74), wrong ones Mispronunciation (accuracy 10–59).
+// So the text is ignored and the error type + accuracy decide.
+const AZURE_ON = true;
 async function azureListen(ch, py, P, onStop){
   if (!AZURE_ON || Date.now() < azDownUntil) return {fallback: true};
   let sdk, tok;
@@ -715,20 +715,20 @@ async function azureListen(ch, py, P, onStop){
       const cfg = sdk.SpeechConfig.fromAuthorizationToken(tok.token, tok.region);
       cfg.speechRecognitionLanguage = 'zh-CN';
       rec = new sdk.SpeechRecognizer(cfg, sdk.AudioConfig.fromDefaultMicrophoneInput());
-      new sdk.PronunciationAssessmentConfig(ch, sdk.PronunciationAssessmentGradingSystem.HundredMark, sdk.PronunciationAssessmentGranularity.Phoneme, false).applyTo(rec);
-      onStop && onStop(() => end(live ? {v: judgeReading(ch, py, P, [live]), alts: [live]} : {err: 'aborted'}), () => end({err: 'aborted'}));
-      timer = setTimeout(() => end(live ? {v: judgeReading(ch, py, P, [live]), alts: [live]} : {err: 'no-speech'}), 8000);
-      rec.recognizing = (_, e) => {
-        live = clean(e.result.text);
-        if (live && judgeReading(ch, py, P, [live]) === 'ok') end({v: 'ok', alts: [live]});
-      };
+      new sdk.PronunciationAssessmentConfig(ch, sdk.PronunciationAssessmentGradingSystem.HundredMark, sdk.PronunciationAssessmentGranularity.Phoneme, true).applyTo(rec);   // true: miscue detection
+      onStop && onStop(() => end({err: live ? 'unclear' : 'aborted'}), () => end({err: 'aborted'}));
+      timer = setTimeout(() => end({err: live ? 'unclear' : 'no-speech'}), 8000);
+      rec.recognizing = (_, e) => { live = clean(e.result.text); };
       rec.recognized = (_, e) => {
-        const r = e.result, text = clean(r.text);
-        if (r.reason !== sdk.ResultReason.RecognizedSpeech || !text) return;   // silence or noise: keep listening
-        let score = null; try { score = Math.round(sdk.PronunciationAssessmentResult.fromResult(r).accuracyScore || 0); } catch (err) {}
-        let v = judgeReading(ch, py, P, [text]);
-        if (v === 'bad' && score != null && score >= AZ_HALF) v = 'half';
-        end({v, alts: [text], score});
+        const r = e.result;
+        if (r.reason !== sdk.ResultReason.RecognizedSpeech || !clean(r.text)) return;   // silence or noise: keep listening
+        let pa = null; try { pa = sdk.PronunciationAssessmentResult.fromResult(r); } catch (err) {}
+        if (!pa) return end({err: 'unclear'});
+        const words = (pa.detailResult && pa.detailResult.Words) || [];
+        const w = words.find(x => x.Word === ch) || words[0] || {};
+        const wa = w.PronunciationAssessment || {}, score = Math.round(wa.AccuracyScore != null ? wa.AccuracyScore : pa.accuracyScore || 0);
+        const v = (wa.ErrorType || 'None') === 'None' && pa.completenessScore > 0 ? 'ok' : score >= AZ_HALF ? 'half' : 'bad';
+        end({v, alts: [''], score});
       };
       rec.canceled = (_, e) => fail(e.errorDetails);
       rec.startContinuousRecognitionAsync(() => {}, fail);
@@ -807,7 +807,7 @@ async function card(o){
     let stopMic = null, abortMic = null, tries = 0;
     const finish = k => { if (done) return; done = true; if (abortMic) abortMic(); touch(); fadeCardSounds(); ov.remove(); res(k); };
     const lmsg = (t, cls) => { const m = ov.querySelector('.lmsg'); if (m){ m.textContent = t; m.className = 'lmsg ' + (cls || ''); } };
-    const heard = t => { const h = ov.querySelector('.lheard'); if (h) h.textContent = t ? L(`听到的是：${t}`, `I heard: ${t}`) : ''; };
+    const heard = t => { const h = ov.querySelector('.lheard'); if (h) h.textContent = !t ? '' : /\d/.test(t) ? t : L(`听到的是：${t}`, `I heard: ${t}`); };
     // Tap 🎤 → listen → right: done. Almost (tone or a similar sound): passes after playing the right sound. Wrong: one more try.
     async function onMic(){
       const btn = ov.querySelector('.mic');
@@ -826,7 +826,7 @@ async function card(o){
         ov.querySelector('.manual').hidden = false; ov.querySelector('.listen + .manual + .row').hidden = true; return;
       }
       if (r.v === 'ok'){ btn.classList.add('ok'); lmsg(L('✅ 读对了！', '✅ You got it!'), 'ok'); await sleep(750); finish('yes'); return; }
-      tries++; heard(r.alts[0] + (r.score != null ? L(` · ${r.score} 分`, ` · score ${r.score}`) : ''));
+      tries++; heard(r.score != null ? L(`读音评分 ${r.score} / 100`, `Pronunciation score ${r.score} / 100`) : r.alts[0]);
       if (r.v === 'half'){   // almost right (tone or a similar sound): passes, and the right pronunciation plays
         say(o.zi); lmsg(L('🟡 差不多，算你读对了！听听标准读音', '🟡 Close enough! Listen to how it sounds'), 'half'); await sleep(1900); finish('yes'); return;
       }
@@ -1205,7 +1205,7 @@ if (STATS_CODE && !LOCAL){
 function track(name){
   try { if (STATS_CODE && !LOCAL && window.goatcounter && window.goatcounter.count) window.goatcounter.count({path: name, title: name, event: true}); } catch (e) {}
 }
-const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v57'].join(' · ');
+const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v58'].join(' · ');
 function openFeedback(){
   track('feedback');
   const ov = document.createElement('div'); ov.className = 'overlay';
