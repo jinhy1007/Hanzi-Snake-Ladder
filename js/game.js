@@ -668,7 +668,7 @@ async function voiceWatch(onQuiet){
    below takes over. */
 const SPEECH_TOKEN_URL = 'https://hanzi-speech-token.jinhy1007.workers.dev';
 const AZ_SDK = 'https://cdn.jsdelivr.net/npm/microsoft-cognitiveservices-speech-sdk@1.44.0/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle-min.js';
-const AZ_OK = 80, AZ_HALF = 60;   // accuracy score (0–100): from AZ_OK ✅, from AZ_HALF 🟡, below ❌
+const AZ_HALF = 60;   // accuracy score (0–100) at which a misheard reading still counts as 🟡 (correct readings scored 64–78 in tests)
 let azTok = null, azDownUntil = 0, azSdk = null;
 function loadAzure(){
   if (!azSdk) azSdk = new Promise((res, rej) => {
@@ -688,42 +688,47 @@ async function azToken(){
   azTok = {token: j.token, region: j.region, at: Date.now()}; return azTok;
 }
 // Resolves {v, alts, score}, {err}, or {fallback: true} when Azure isn't available (then the browser recognizer is used).
+// Continuous listening, stopped at the first result: Azure's "stop after silence" settings are rejected together with
+// pronunciation assessment (error 1007), and single-shot listening took 6–10 s (tested in lab/azure-test.html).
+// A live guess that is already the right character is accepted at once; otherwise the final result is judged by its
+// text, with the accuracy score as a safety net for characters the recognizer mishears.
 async function azureListen(ch, py, P, onStop){
   if (Date.now() < azDownUntil) return {fallback: true};
   let sdk, tok;
   try { [sdk, tok] = await Promise.all([loadAzure(), azToken()]); }
   catch (e) { azDownUntil = Date.now() + 5 * 60e3; return {fallback: true}; }   // try Azure again in 5 minutes
   return new Promise(res => {
-    let rec = null, done = false;
-    const end = r => { if (done) return; done = true; micBusy = false; try { rec && rec.close(); } catch (e) {} res(r); };
+    let rec = null, done = false, timer = null, live = '';
+    const clean = t => String(t || '').replace(/[。，！？.,!?\s]/g, '');
+    const end = r => {
+      if (done) return; done = true; clearTimeout(timer); micBusy = false;
+      try { rec.stopContinuousRecognitionAsync(() => rec.close(), () => rec.close()); } catch (e) { try { rec && rec.close(); } catch (e2) {} }
+      res(r);
+    };
+    const fail = why => { azTok = null; azDownUntil = Date.now() + 60e3; end(/permission|NotAllowed|denied/i.test(String(why)) ? {err: 'not-allowed'} : {fallback: true}); };
     try {
       micBusy = true;
       try { if (navigator.audioSession) navigator.audioSession.type = 'auto'; } catch (e) {}
       const cfg = sdk.SpeechConfig.fromAuthorizationToken(tok.token, tok.region);
       cfg.speechRecognitionLanguage = 'zh-CN';
-      cfg.setProperty(sdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, '6000');
-      cfg.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, '700');
-      cfg.setProperty(sdk.PropertyId.Speech_SegmentationSilenceTimeoutMs, '700');
       rec = new sdk.SpeechRecognizer(cfg, sdk.AudioConfig.fromDefaultMicrophoneInput());
-      const pa = new sdk.PronunciationAssessmentConfig(ch, sdk.PronunciationAssessmentGradingSystem.HundredMark, sdk.PronunciationAssessmentGranularity.Phoneme, false);
-      pa.applyTo(rec);
-      onStop && onStop(() => end({err: 'aborted'}), () => end({err: 'aborted'}));
-      rec.recognizeOnceAsync(result => {
-        if (result.reason === sdk.ResultReason.RecognizedSpeech){
-          const text = (result.text || '').replace(/[。，！？.,!?\s]/g, '');
-          let score = 0; try { score = Math.round(sdk.PronunciationAssessmentResult.fromResult(result).accuracyScore || 0); } catch (e) {}
-          // the recognized text can settle it (same or same-sounding character, e.g. for characters with two readings)
-          let v = judgeReading(ch, py, P, [text]);
-          if (v !== 'ok' && score >= AZ_OK) v = 'ok';
-          else if (v === 'bad' && score >= AZ_HALF) v = 'half';
-          end({v, alts: [text || '?'], score});
-        } else if (result.reason === sdk.ResultReason.NoMatch) end({err: 'unclear'});
-        else {
-          const c = sdk.CancellationDetails.fromResult(result), why = String(c && c.errorDetails || '');
-          if (/permission|NotAllowed|denied/i.test(why)) end({err: 'not-allowed'});
-          else { azTok = null; azDownUntil = Date.now() + 60e3; end({fallback: true}); }
-        }
-      }, err => { azTok = null; azDownUntil = Date.now() + 60e3; end(/permission|NotAllowed|denied/i.test(String(err)) ? {err: 'not-allowed'} : {fallback: true}); });
+      new sdk.PronunciationAssessmentConfig(ch, sdk.PronunciationAssessmentGradingSystem.HundredMark, sdk.PronunciationAssessmentGranularity.Phoneme, false).applyTo(rec);
+      onStop && onStop(() => end(live ? {v: judgeReading(ch, py, P, [live]), alts: [live]} : {err: 'aborted'}), () => end({err: 'aborted'}));
+      timer = setTimeout(() => end(live ? {v: judgeReading(ch, py, P, [live]), alts: [live]} : {err: 'no-speech'}), 8000);
+      rec.recognizing = (_, e) => {
+        live = clean(e.result.text);
+        if (live && judgeReading(ch, py, P, [live]) === 'ok') end({v: 'ok', alts: [live]});
+      };
+      rec.recognized = (_, e) => {
+        const r = e.result, text = clean(r.text);
+        if (r.reason !== sdk.ResultReason.RecognizedSpeech || !text) return;   // silence or noise: keep listening
+        let score = null; try { score = Math.round(sdk.PronunciationAssessmentResult.fromResult(r).accuracyScore || 0); } catch (err) {}
+        let v = judgeReading(ch, py, P, [text]);
+        if (v === 'bad' && score != null && score >= AZ_HALF) v = 'half';
+        end({v, alts: [text], score});
+      };
+      rec.canceled = (_, e) => fail(e.errorDetails);
+      rec.startContinuousRecognitionAsync(() => {}, fail);
     } catch (e) { end({fallback: true}); }
   });
 }
@@ -1197,7 +1202,7 @@ if (STATS_CODE && !LOCAL){
 function track(name){
   try { if (STATS_CODE && !LOCAL && window.goatcounter && window.goatcounter.count) window.goatcounter.count({path: name, title: name, event: true}); } catch (e) {}
 }
-const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v55'].join(' · ');
+const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v56'].join(' · ');
 function openFeedback(){
   track('feedback');
   const ov = document.createElement('div'); ov.className = 'overlay';
