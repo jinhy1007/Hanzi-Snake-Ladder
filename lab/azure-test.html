@@ -29,12 +29,12 @@ pre{white-space:pre-wrap;word-break:break-all;font-size:11px;background:#F2ECFC;
   </section>
   <section class="panel">
     <div class="row"><span>读这个字：</span><input id="zi" value="大" maxlength="1"></div>
-    <p style="margin:10px 0 6px">② 每个按钮都读一次「大」，看哪个有结果：</p>
+    <p style="margin:10px 0 6px">② 每个按钮读两次：一次读对「大」，一次故意读错（比如读成「他」或 dǎ）：</p>
     <div class="row" style="flex-direction:column;align-items:stretch">
-      <button data-v="A">A 🎤 打分（不设停顿时间）</button>
-      <button data-v="B">B 🎤 打分 + 停顿时间（游戏现在用的）</button>
-      <button data-v="C">C 🎤 只识别，不打分</button>
-      <button data-v="E">E 🎤 打分（只看声母韵母，不细到音素）</button>
+      <button data-v="F">F 🎤 连续听，听到第一个结果就停（新办法）</button>
+      <button data-v="G1">G1 🎤 打分 + 只设「开头等多久」</button>
+      <button data-v="G2">G2 🎤 打分 + 只设「读完停多久」</button>
+      <button data-v="A" class="soft">A 🎤 打分（不设停顿时间，上次能用但慢）</button>
     </div>
     <p style="margin:10px 0 0">SDK 版本：<b id="ver"></b>　<a id="other" href="#">换另一个版本再试</a></p>
     <div id="res" style="margin-top:10px"></div>
@@ -90,6 +90,8 @@ async function readVariant(variant){
   try {
     const cfg = sdk.SpeechConfig.fromAuthorizationToken(tok.token, tok.region);
     cfg.speechRecognitionLanguage = 'zh-CN';
+    if (variant === 'G1') cfg.setProperty(sdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, '6000');
+    if (variant === 'G2') cfg.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, '700');
     if (variant === 'B'){
       cfg.setProperty(sdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, '6000');
       cfg.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, '700');
@@ -103,6 +105,24 @@ async function readVariant(variant){
     }
     res.textContent = `🎤 [${variant}] 正在听，请读「${ch}」……`; log(`listen ${variant} ${ch} sdk ${SDK_VER}`);
     const t0 = performance.now();
+    if (variant === 'F'){
+      let done = false, timer = null;
+      const finishF = (out) => { if (done) return; done = true; clearTimeout(timer); res.textContent = out; log(out.replace(/\n/g, ' | ')); rec.stopContinuousRecognitionAsync(() => rec.close(), () => rec.close()); };
+      timer = setTimeout(() => finishF(`[F] 8 秒内没有结果`), 8000);
+      rec.recognizing = (_, e) => log(`[F] 正在听：${e.result.text}`);
+      rec.recognized = (_, e) => {
+        const r = e.result, ms = Math.round(performance.now() - t0);
+        if (r.reason !== sdk.ResultReason.RecognizedSpeech || !r.text) { log(`[F] ${sdk.ResultReason[r.reason]} ${ms}ms`); return; }
+        let out = `[F] 结果：听到「${r.text}」，用了 ${ms}ms`;
+        try { const p = sdk.PronunciationAssessmentResult.fromResult(r); out += `\n准确度 ${p.accuracyScore}，发音分 ${p.pronunciationScore}，完整度 ${p.completenessScore}`;
+          const w = p.detailResult && p.detailResult.Words && p.detailResult.Words[0]; if (w) out += `\n错误类型：${w.PronunciationAssessment && w.PronunciationAssessment.ErrorType}`; }
+        catch (err) { out += '\n读分数出错：' + err.message; }
+        finishF(out);
+      };
+      rec.canceled = (_, e) => finishF(`[F] 取消：${sdk.CancellationReason[e.reason]} ${e.errorCode || ''} ${e.errorDetails || ''}`);
+      rec.startContinuousRecognitionAsync(() => log('[F] started'), err => finishF('[F] 启动失败：' + err));
+      return;
+    }
     rec.recognizeOnceAsync(r => {
       const ms = Math.round(performance.now() - t0);
       const reason = sdk.ResultReason[r.reason];
