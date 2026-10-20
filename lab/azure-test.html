@@ -29,9 +29,10 @@ pre{white-space:pre-wrap;word-break:break-all;font-size:11px;background:#F2ECFC;
   </section>
   <section class="panel">
     <div class="row"><span>读这个字：</span><input id="zi" value="大" maxlength="1"></div>
-    <p style="margin:10px 0 6px">② 每个按钮读两次：一次读对「大」，一次故意读错（比如读成「他」或 dǎ）：</p>
+    <p style="margin:10px 0 6px">② 按 M，每次读一个：读对「大」几次，再故意读错几次（读成「他」「块」，或者读 dǎ），每次都看结果：</p>
     <div class="row" style="flex-direction:column;align-items:stretch">
-      <button data-v="F">F 🎤 连续听，听到第一个结果就停（新办法）</button>
+      <button data-v="M">M 🎤 连续听 + 找出读错的字（miscue）</button>
+      <button data-v="F" class="soft">F 🎤 连续听（上次用的，读错也算对）</button>
       <button data-v="G1">G1 🎤 打分 + 只设「开头等多久」</button>
       <button data-v="G2">G2 🎤 打分 + 只设「读完停多久」</button>
       <button data-v="A" class="soft">A 🎤 打分（不设停顿时间，上次能用但慢）</button>
@@ -100,27 +101,28 @@ async function readVariant(variant){
     const rec = new sdk.SpeechRecognizer(cfg, sdk.AudioConfig.fromDefaultMicrophoneInput());
     if (variant !== 'C'){
       const pa = new sdk.PronunciationAssessmentConfig(ch, sdk.PronunciationAssessmentGradingSystem.HundredMark,
-        variant === 'E' ? sdk.PronunciationAssessmentGranularity.Word : sdk.PronunciationAssessmentGranularity.Phoneme, false);
+        variant === 'E' ? sdk.PronunciationAssessmentGranularity.Word : sdk.PronunciationAssessmentGranularity.Phoneme, variant === 'M');
       pa.applyTo(rec);
     }
     res.textContent = `🎤 [${variant}] 正在听，请读「${ch}」……`; log(`listen ${variant} ${ch} sdk ${SDK_VER}`);
     const t0 = performance.now();
-    if (variant === 'F'){
+    if (variant === 'F' || variant === 'M'){
       let done = false, timer = null;
       const finishF = (out) => { if (done) return; done = true; clearTimeout(timer); res.textContent = out; log(out.replace(/\n/g, ' | ')); rec.stopContinuousRecognitionAsync(() => rec.close(), () => rec.close()); };
-      timer = setTimeout(() => finishF(`[F] 8 秒内没有结果`), 8000);
-      rec.recognizing = (_, e) => log(`[F] 正在听：${e.result.text}`);
+      timer = setTimeout(() => finishF(`[${variant}] 8 秒内没有结果`), 8000);
+      rec.recognizing = (_, e) => log(`[${variant}] 正在听：${e.result.text}`);
       rec.recognized = (_, e) => {
         const r = e.result, ms = Math.round(performance.now() - t0);
-        if (r.reason !== sdk.ResultReason.RecognizedSpeech || !r.text) { log(`[F] ${sdk.ResultReason[r.reason]} ${ms}ms`); return; }
-        let out = `[F] 结果：听到「${r.text}」，用了 ${ms}ms`;
+        if (r.reason !== sdk.ResultReason.RecognizedSpeech || !r.text) { log(`[${variant}] ${sdk.ResultReason[r.reason]} ${ms}ms`); return; }
+        let out = `[${variant}] 结果：听到「${r.text}」，用了 ${ms}ms`;
         try { const p = sdk.PronunciationAssessmentResult.fromResult(r); out += `\n准确度 ${p.accuracyScore}，发音分 ${p.pronunciationScore}，完整度 ${p.completenessScore}`;
-          const w = p.detailResult && p.detailResult.Words && p.detailResult.Words[0]; if (w) out += `\n错误类型：${w.PronunciationAssessment && w.PronunciationAssessment.ErrorType}`; }
+          const ws = (p.detailResult && p.detailResult.Words) || [];
+          out += '\n每个字：' + ws.map(w => `${w.Word}=${w.PronunciationAssessment && w.PronunciationAssessment.ErrorType}/${w.PronunciationAssessment && w.PronunciationAssessment.AccuracyScore}`).join('，'); }
         catch (err) { out += '\n读分数出错：' + err.message; }
         finishF(out);
       };
-      rec.canceled = (_, e) => finishF(`[F] 取消：${sdk.CancellationReason[e.reason]} ${e.errorCode || ''} ${e.errorDetails || ''}`);
-      rec.startContinuousRecognitionAsync(() => log('[F] started'), err => finishF('[F] 启动失败：' + err));
+      rec.canceled = (_, e) => finishF(`[${variant}] 取消：${sdk.CancellationReason[e.reason]} ${e.errorCode || ''} ${e.errorDetails || ''}`);
+      rec.startContinuousRecognitionAsync(() => log(`[${variant}] started`), err => finishF(`[${variant}] 启动失败：` + err));
       return;
     }
     rec.recognizeOnceAsync(r => {

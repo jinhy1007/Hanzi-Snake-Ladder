@@ -692,8 +692,11 @@ async function azToken(){
 // pronunciation assessment (error 1007), and single-shot listening took 6–10 s (tested in lab/azure-test.html).
 // A live guess that is already the right character is accepted at once; otherwise the final result is judged by its
 // text, with the accuracy score as a safety net for characters the recognizer mishears.
+// Off for now: with the expected character given to Azure, its guesses lean toward that character, so wrong readings
+// passed too (吗 read as 块 → "吗"). Back on once miscue detection is tested in lab/azure-test.html (variant M).
+const AZURE_ON = false;
 async function azureListen(ch, py, P, onStop){
-  if (Date.now() < azDownUntil) return {fallback: true};
+  if (!AZURE_ON || Date.now() < azDownUntil) return {fallback: true};
   let sdk, tok;
   try { [sdk, tok] = await Promise.all([loadAzure(), azToken()]); }
   catch (e) { azDownUntil = Date.now() + 5 * 60e3; return {fallback: true}; }   // try Azure again in 5 minutes
@@ -1202,7 +1205,7 @@ if (STATS_CODE && !LOCAL){
 function track(name){
   try { if (STATS_CODE && !LOCAL && window.goatcounter && window.goatcounter.count) window.goatcounter.count({path: name, title: name, event: true}); } catch (e) {}
 }
-const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v56'].join(' · ');
+const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v57'].join(' · ');
 function openFeedback(){
   track('feedback');
   const ov = document.createElement('div'); ov.className = 'overlay';
