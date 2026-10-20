@@ -330,3 +330,12 @@ button.tile:active{transform:rotate(var(--rot)) scale(.93)}
 .dot.f,.zgrid .f{background:#3FB873}.zgrid .f{color:#fff}
 .prules{list-style:none;margin:0 0 12px;padding:10px 12px;background:var(--soft);border-radius:14px;display:flex;flex-direction:column;gap:6px;font-family:var(--f-text);font-size:13.5px;line-height:1.5;color:var(--ink-soft)}
 .prules li{display:flex;gap:8px}.prules b{color:var(--ink)}
+/* 一局结束：所有学习者一张卡 */
+.sums{display:flex;flex-direction:column;gap:12px;width:100%;max-height:52vh;overflow:auto}
+.sumrow{background:var(--soft);border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.sumwho{display:flex;align-items:center;gap:8px;font-family:var(--f-text);font-size:15px;color:var(--ink-soft)}
+.sumwho .mini{width:34px;height:34px;display:grid;place-items:center}
+.sumwho b{font-family:var(--f-ui);font-weight:400;font-size:18px;color:var(--ink)}
+.sumwho span:last-child{margin-left:auto}
+.sumrow .sumz span{width:40px;height:40px;font-size:24px}
+.sumtxt{margin:0;font-size:14px!important}
