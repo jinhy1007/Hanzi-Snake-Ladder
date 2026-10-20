@@ -830,7 +830,7 @@ async function card(o){
           : L('现在听不了（可能没连上网），请家长帮忙判断：', 'Can\'t listen right now (maybe no internet) — a grown-up can judge instead:'), 'bad');
         ov.querySelector('.manual').hidden = false; ov.querySelector('.listen + .manual + .row').hidden = true; return;
       }
-      if (r.v === 'ok'){ btn.classList.add('ok'); lmsg(L('✅ 读对了！', '✅ You got it!') + (r.score != null ? ` · ${r.score}` : ''), 'ok'); await sleep(r.score != null ? 1100 : 750); finish('yes'); return; }   // score shown while we tune Azure
+      if (r.v === 'ok'){ btn.classList.add('ok'); lmsg(L('✅ 读对了！', '✅ You got it!'), 'ok'); await sleep(750); finish('yes'); return; }
       tries++; heard(r.score != null ? L(`读音评分 ${r.score} / 100`, `Pronunciation score ${r.score} / 100`) : r.alts[0] || L('和这个字的读音差很多', 'Sounded quite different'));
       if (r.v === 'half'){   // almost right (tone or a similar sound): passes, and the right pronunciation plays
         say(o.zi); lmsg(L('🟡 差不多，算你读对了！听听标准读音', '🟡 Close enough! Listen to how it sounds'), 'half'); await sleep(1900); finish('yes'); return;
@@ -994,7 +994,10 @@ function renderSetup(){
         <button type="button" data-act="check" data-v="parent" class="${checkMode() === 'parent' || !canListen ? 'on' : ''}">👨‍👩‍👧 ${L('家长判断', 'A grown-up')}</button>
         <button type="button" data-act="check" data-v="voice" class="${checkMode() === 'voice' && canListen ? 'on' : ''}" ${canListen ? '' : 'disabled'}>🎤 ${L('游戏来听', 'The game listens')}</button></div>
       <p class="note">${!canListen ? L('这个浏览器不能自动听读音，由家长判断。想让游戏来听，请用 iPhone / iPad 的 Safari，或电脑上的 Chrome、Edge、Safari。', 'This browser can\'t listen, so a grown-up judges. For listening, use Safari on iPhone/iPad, or Chrome, Edge or Safari on a computer.')
-        : checkMode() === 'voice' ? L('小朋友点 🎤 读出来，游戏会听读得对不对，一个人也能玩。单个字不容易听准，有时要多读一次。第一次会问能不能用麦克风，请点「允许」。声音交给微软 Azure 的读音评测打分（连不上时用浏览器自带的语音识别），我们不录音、不保存。', 'Kids tap 🎤 and read out loud; the game checks the reading, so they can play on their own. Single characters are hard to hear, so sometimes they\'ll need to read twice. The first time, allow the microphone. The voice is scored by Microsoft Azure\'s pronunciation assessment (or the browser\'s own speech recognition if Azure can\'t be reached); we don\'t record or keep it.')
+        : checkMode() === 'voice' ? L('小朋友点 🎤 读出来，游戏会听读得对不对，一个人也能玩。', 'Kids tap 🎤 and read out loud; the game checks the reading, so they can play on their own.')
+          + `<span class="warnbox">⚠️ ${L('游戏来听只能<b>大概判断</b>，适合当练习：声调读错、相近的音（比如「环」和「碗」）常常也会算对；完全读错的字一般能听出来，但有时要等一会儿，或者要多读一次。想准确判断，请选「家长判断」。', '“The game listens” is only a <b>rough check</b>, best for practice: wrong tones and similar sounds (like 环 for 碗) often still pass; a completely different character is usually caught, but it can take a moment or a second try. For an accurate check, choose “A grown-up”.')}</span>`
+          + L('第一次会问能不能用麦克风，请点「允许」。iPhone / iPad 上如果一直问：点 Safari 地址栏左边的「大小」图标 →「网站设置」→ 麦克风选「允许」。声音交给微软 Azure 的读音评测（连不上时用浏览器自带的语音识别），我们不录音、不保存。',
+              'The first time, allow the microphone. If an iPhone/iPad keeps asking: tap the “aA” icon in Safari\'s address bar → Website Settings → Microphone: Allow. The voice is checked by Microsoft Azure\'s pronunciation assessment (or the browser\'s own speech recognition if Azure can\'t be reached); we don\'t record or keep it.')
         : L('读完后由家长点「读对了」或「没读出来」，卡片上可以听标准读音。小朋友一个人玩，或者家长不会中文时，可以选「🎤 游戏来听」。', 'After reading, a grown-up taps "Got it" or "Not yet" (the card can play the pronunciation). If the kid plays alone, or the grown-up doesn\'t read Chinese, choose "🎤 The game listens".')}</p>
     </section>
     <section class="panel"><h2>${L('提示卡', 'Hint cards')}</h2>
@@ -1210,7 +1213,7 @@ if (STATS_CODE && !LOCAL){
 function track(name){
   try { if (STATS_CODE && !LOCAL && window.goatcounter && window.goatcounter.count) window.goatcounter.count({path: name, title: name, event: true}); } catch (e) {}
 }
-const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v59'].join(' · ');
+const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v60'].join(' · ');
 function openFeedback(){
   track('feedback');
   const ov = document.createElement('div'); ov.className = 'overlay';

@@ -339,3 +339,4 @@ button.tile:active{transform:rotate(var(--rot)) scale(.93)}
 .sumwho span:last-child{margin-left:auto}
 .sumrow .sumz span{width:40px;height:40px;font-size:24px}
 .sumtxt{margin:0;font-size:14px!important}
+.note .warnbox{display:block;margin:8px 0;padding:8px 10px;border-radius:12px;background:#FFF1CC;color:var(--ink)}

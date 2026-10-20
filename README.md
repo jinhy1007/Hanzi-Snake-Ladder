@@ -146,3 +146,7 @@ Chrome/Edge 上另外看麦克风音量，读完 0.6 秒就停止，不用等背
 Azure 的密钥不放在网页里：Cloudflare Worker（代码在 worker/speech-token.js，地址 SPEECH_TOKEN_URL）用密钥换 10 分钟的临时凭证，
 只给本网站和本地预览用。Azure 资源：Speech services，免费 F0，区域 westus2；Worker 的变量 AZURE_KEY（Secret）、AZURE_REGION。
 连不上 Azure（比如公司网络挡住 workers.dev）时自动改用浏览器自带的语音识别，再不行就换成家长判断。
+
+**Azure 的准确度（2026-10 用 iPhone 实测）**：单字读音评测很宽松，声调读错（汤 → 糖 90 分）、相近的音（碗 → 环 85 分、半 → 八 70 分）
+都会算对；完全不同的字一般能判错，但有时收不到最终结果，要等 8 秒。所以「游戏来听」只当练习，设置里有提示，准确判断请用家长判断。
+以后可以试：让小朋友读字再说一个词（组词）用普通识别看有没有这个字，或者换讯飞 / 腾讯的中文口语评测。
