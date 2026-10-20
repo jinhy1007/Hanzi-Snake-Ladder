@@ -717,11 +717,16 @@ async function azureListen(ch, py, P, onStop){
       rec = new sdk.SpeechRecognizer(cfg, sdk.AudioConfig.fromDefaultMicrophoneInput());
       new sdk.PronunciationAssessmentConfig(ch, sdk.PronunciationAssessmentGradingSystem.HundredMark, sdk.PronunciationAssessmentGranularity.Phoneme, true).applyTo(rec);   // true: miscue detection
       onStop && onStop(() => end({err: live ? 'unclear' : 'aborted'}), () => end({err: 'aborted'}));
-      timer = setTimeout(() => end({err: live ? 'unclear' : 'no-speech'}), 8000);
+      // A completely different character comes back as "no match" (or never finishes) after Azure has started hearing
+      // speech: that is a wrong reading, not silence.
+      timer = setTimeout(() => end(live ? {v: 'bad', alts: [''], score: null} : {err: 'no-speech'}), 8000);
       rec.recognizing = (_, e) => { live = clean(e.result.text); };
       rec.recognized = (_, e) => {
         const r = e.result;
-        if (r.reason !== sdk.ResultReason.RecognizedSpeech || !clean(r.text)) return;   // silence or noise: keep listening
+        if (r.reason !== sdk.ResultReason.RecognizedSpeech || !clean(r.text)){
+          if (live) end({v: 'bad', alts: [''], score: null});   // spoke, but nothing like the character
+          return;                                                // just noise: keep listening
+        }
         let pa = null; try { pa = sdk.PronunciationAssessmentResult.fromResult(r); } catch (err) {}
         if (!pa) return end({err: 'unclear'});
         const words = (pa.detailResult && pa.detailResult.Words) || [];
@@ -825,8 +830,8 @@ async function card(o){
           : L('现在听不了（可能没连上网），请家长帮忙判断：', 'Can\'t listen right now (maybe no internet) — a grown-up can judge instead:'), 'bad');
         ov.querySelector('.manual').hidden = false; ov.querySelector('.listen + .manual + .row').hidden = true; return;
       }
-      if (r.v === 'ok'){ btn.classList.add('ok'); lmsg(L('✅ 读对了！', '✅ You got it!'), 'ok'); await sleep(750); finish('yes'); return; }
-      tries++; heard(r.score != null ? L(`读音评分 ${r.score} / 100`, `Pronunciation score ${r.score} / 100`) : r.alts[0]);
+      if (r.v === 'ok'){ btn.classList.add('ok'); lmsg(L('✅ 读对了！', '✅ You got it!') + (r.score != null ? ` · ${r.score}` : ''), 'ok'); await sleep(r.score != null ? 1100 : 750); finish('yes'); return; }   // score shown while we tune Azure
+      tries++; heard(r.score != null ? L(`读音评分 ${r.score} / 100`, `Pronunciation score ${r.score} / 100`) : r.alts[0] || L('和这个字的读音差很多', 'Sounded quite different'));
       if (r.v === 'half'){   // almost right (tone or a similar sound): passes, and the right pronunciation plays
         say(o.zi); lmsg(L('🟡 差不多，算你读对了！听听标准读音', '🟡 Close enough! Listen to how it sounds'), 'half'); await sleep(1900); finish('yes'); return;
       }
@@ -1205,7 +1210,7 @@ if (STATS_CODE && !LOCAL){
 function track(name){
   try { if (STATS_CODE && !LOCAL && window.goatcounter && window.goatcounter.count) window.goatcounter.count({path: name, title: name, event: true}); } catch (e) {}
 }
-const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v58'].join(' · ');
+const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v59'].join(' · ');
 function openFeedback(){
   track('feedback');
   const ov = document.createElement('div'); ov.className = 'overlay';
