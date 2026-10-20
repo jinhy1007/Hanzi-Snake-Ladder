@@ -28,7 +28,15 @@ pre{white-space:pre-wrap;word-break:break-all;font-size:11px;background:#F2ECFC;
     <div id="steps" style="margin-top:8px"></div>
   </section>
   <section class="panel">
-    <div class="row"><span>读这个字：</span><input id="zi" value="大" maxlength="1"><button id="read">② 🎤 点我读</button></div>
+    <div class="row"><span>读这个字：</span><input id="zi" value="大" maxlength="1"></div>
+    <p style="margin:10px 0 6px">② 每个按钮都读一次「大」，看哪个有结果：</p>
+    <div class="row" style="flex-direction:column;align-items:stretch">
+      <button data-v="A">A 🎤 打分（不设停顿时间）</button>
+      <button data-v="B">B 🎤 打分 + 停顿时间（游戏现在用的）</button>
+      <button data-v="C">C 🎤 只识别，不打分</button>
+      <button data-v="E">E 🎤 打分（只看声母韵母，不细到音素）</button>
+    </div>
+    <p style="margin:10px 0 0">SDK 版本：<b id="ver"></b>　<a id="other" href="#">换另一个版本再试</a></p>
     <div id="res" style="margin-top:10px"></div>
   </section>
   <section class="panel">
@@ -38,7 +46,8 @@ pre{white-space:pre-wrap;word-break:break-all;font-size:11px;background:#F2ECFC;
 </main>
 <script>
 const TOKEN_URL = 'https://hanzi-speech-token.jinhy1007.workers.dev';
-const SDK_URL = 'https://cdn.jsdelivr.net/npm/microsoft-cognitiveservices-speech-sdk@1.44.0/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle-min.js';
+const SDK_VER = new URLSearchParams(location.search).get('sdk') || '1.44.0';
+const SDK_URL = `https://cdn.jsdelivr.net/npm/microsoft-cognitiveservices-speech-sdk@${SDK_VER}/distrib/browser/microsoft.cognitiveservices.speech.sdk.bundle-min.js`;
 const $ = id => document.getElementById(id);
 const logs = [`页面：${location.href}`, `浏览器：${navigator.userAgent}`];
 const log = m => { logs.push(`${(performance.now() / 1000).toFixed(1)}s ${m}`); $('log').textContent = logs.join('\n'); };
@@ -69,7 +78,10 @@ $('go').onclick = async () => {
   try { const sdk = await loadSdk(); step(true, 'Azure 语音工具加载好了', 'SDK ' + (sdk.SpeechConfig ? 'OK' : '?')); }
   catch (e) { step(false, 'Azure 语音工具加载失败', String(e.message || e)); }
 };
-$('read').onclick = async () => {
+$('ver').textContent = SDK_VER;
+$('other').href = '?sdk=' + (SDK_VER === '1.44.0' ? '1.48.0' : '1.44.0');
+document.querySelectorAll('[data-v]').forEach(b => b.onclick = () => readVariant(b.dataset.v));
+async function readVariant(variant){
   const ch = ($('zi').value || '大').trim().slice(0, 1), res = $('res');
   res.textContent = '准备中……';
   let sdk;
@@ -78,18 +90,23 @@ $('read').onclick = async () => {
   try {
     const cfg = sdk.SpeechConfig.fromAuthorizationToken(tok.token, tok.region);
     cfg.speechRecognitionLanguage = 'zh-CN';
-    cfg.setProperty(sdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, '6000');
-    cfg.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, '700');
-    cfg.setProperty(sdk.PropertyId.Speech_SegmentationSilenceTimeoutMs, '700');
+    if (variant === 'B'){
+      cfg.setProperty(sdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, '6000');
+      cfg.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, '700');
+      cfg.setProperty(sdk.PropertyId.Speech_SegmentationSilenceTimeoutMs, '700');
+    }
     const rec = new sdk.SpeechRecognizer(cfg, sdk.AudioConfig.fromDefaultMicrophoneInput());
-    const pa = new sdk.PronunciationAssessmentConfig(ch, sdk.PronunciationAssessmentGradingSystem.HundredMark, sdk.PronunciationAssessmentGranularity.Phoneme, false);
-    pa.applyTo(rec);
-    res.textContent = '🎤 正在听，请读「' + ch + '」……'; log(`listen ${ch}`);
+    if (variant !== 'C'){
+      const pa = new sdk.PronunciationAssessmentConfig(ch, sdk.PronunciationAssessmentGradingSystem.HundredMark,
+        variant === 'E' ? sdk.PronunciationAssessmentGranularity.Word : sdk.PronunciationAssessmentGranularity.Phoneme, false);
+      pa.applyTo(rec);
+    }
+    res.textContent = `🎤 [${variant}] 正在听，请读「${ch}」……`; log(`listen ${variant} ${ch} sdk ${SDK_VER}`);
     const t0 = performance.now();
     rec.recognizeOnceAsync(r => {
       const ms = Math.round(performance.now() - t0);
       const reason = sdk.ResultReason[r.reason];
-      let out = `结果：${reason}，听到「${r.text || ''}」，用了 ${ms}ms`;
+      let out = `[${variant}] 结果：${reason}，听到「${r.text || ''}」，用了 ${ms}ms`;
       if (r.reason === sdk.ResultReason.RecognizedSpeech){
         try { const p = sdk.PronunciationAssessmentResult.fromResult(r); out += `\n准确度 ${p.accuracyScore}，发音分 ${p.pronunciationScore}，完整度 ${p.completenessScore}`;
           const w = p.detailResult && p.detailResult.Words && p.detailResult.Words[0]; if (w) out += `\n错误类型：${w.PronunciationAssessment && w.PronunciationAssessment.ErrorType}`; }
@@ -98,9 +115,9 @@ $('read').onclick = async () => {
         const c = sdk.CancellationDetails.fromResult(r); out += `\n取消原因：${sdk.CancellationReason[c.reason]} ${c.errorCode || ''} ${c.errorDetails || ''}`;
       }
       res.textContent = out; log(out.replace(/\n/g, ' | ')); rec.close();
-    }, err => { res.textContent = '❌ 出错：' + err; log('error ' + err); rec.close(); });
-  } catch (e) { res.textContent = '❌ 出错：' + (e.message || e); log('exception ' + (e.message || e)); }
-};
+    }, err => { res.textContent = '❌ 出错：' + err; log(`[${variant}] error ` + err); rec.close(); });
+  } catch (e) { res.textContent = '❌ 出错：' + (e.message || e); log(`[${variant}] exception ` + (e.message || e)); }
+}
 $('copy').onclick = async () => { try { await navigator.clipboard.writeText(logs.join('\n')); $('copy').textContent = '✅ 已复制'; } catch (e) { $('copy').textContent = '请长按下面的文字复制'; } };
 log('ready');
 </script>
