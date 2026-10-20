@@ -340,3 +340,7 @@ button.tile:active{transform:rotate(var(--rot)) scale(.93)}
 .sumrow .sumz span{width:40px;height:40px;font-size:24px}
 .sumtxt{margin:0;font-size:14px!important}
 .note .warnbox{display:block;margin:8px 0;padding:8px 10px;border-radius:12px;background:#FFF1CC;color:var(--ink)}
+/* 多台设备同步 */
+.synccode{font-family:var(--f-text);font-size:15px;margin:0 0 6px}
+.synccode b{font-family:ui-monospace,Menlo,monospace;font-size:20px;letter-spacing:1px;color:var(--ink)}
+.link.syncjoin{display:block;margin:6px auto 0;font-size:15px}

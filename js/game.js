@@ -362,8 +362,124 @@ function recordRead(id, ch, ok, hinted){
   saveL(); return newly;
 }
 function newLearner(name, avatar){
-  const l = {id: 'L' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: String(name || '').trim().slice(0, 8) || L('小朋友', 'Learner'), avatar};
+  const l = {id: 'L' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: String(name || '').trim().slice(0, 8) || L('小朋友', 'Learner'), avatar, t: Date.now()};
   LP.list.push(l); lstat(l.id); saveL(); return l;
+}
+/* ---------- family sync: the same learners and progress on every device, no accounts ----------
+   A family sync code (made by the Worker, worker/speech-token.js → /sync, stored in Cloudflare D1) links devices.
+   Each sync reads the cloud copy, merges it with this device's copy and saves the result back; if another device saved
+   in between (409), it simply tries again. Merging keeps every learner (unless deleted on some device) and, per
+   character, the higher counts and the state of whichever device saw it last. */
+const KEY_SYNC = 'szsxq.sync.v1';
+let SY = load(KEY_SYNC) || {};
+const saveSY = () => store(KEY_SYNC, SY);
+const fmtCode = c => String(c || '').replace(/(.{4})(?=.)/g, '$1-');
+const syncUrl = () => SPEECH_TOKEN_URL + '/sync';
+function mergeStat(x, y){
+  if (!x || !y) return JSON.parse(JSON.stringify(x || y || {games: 0, reads: 0, chars: {}}));
+  const out = {games: Math.max(x.games || 0, y.games || 0), reads: Math.max(x.reads || 0, y.reads || 0), chars: {}};
+  new Set([...Object.keys(x.chars || {}), ...Object.keys(y.chars || {})]).forEach(c => {
+    const a = (x.chars || {})[c], b = (y.chars || {})[c];
+    if (!a || !b){ out.chars[c] = {...(a || b)}; return; }
+    const newer = (b.last || 0) > (a.last || 0) ? b : a;
+    out.chars[c] = {...newer, ok: Math.max(a.ok || 0, b.ok || 0), hint: Math.max(a.hint || 0, b.hint || 0), miss: Math.max(a.miss || 0, b.miss || 0), last: Math.max(a.last || 0, b.last || 0)};
+  });
+  return out;
+}
+function mergeLP(a, b){
+  const gone = {...(a.gone || {})};
+  Object.entries(b.gone || {}).forEach(([id, t]) => { gone[id] = Math.max(gone[id] || 0, t); });
+  const byId = new Map();
+  [...(a.list || []), ...(b.list || [])].forEach(l => { const o = byId.get(l.id); if (!o || (l.t || 0) > (o.t || 0)) byId.set(l.id, {...l}); });
+  const list = [...byId.values()].filter(l => !gone[l.id]), stats = {};
+  list.forEach(l => { stats[l.id] = mergeStat((a.stats || {})[l.id], (b.stats || {})[l.id]); });
+  return {list, stats, gone};
+}
+function useLP(next){
+  LP = next; saveL();
+  let seat = false;
+  S.players.forEach(p => { if (p.learner && !learnerOf(p.learner)){ p.learner = null; seat = true; } });
+  if (seat) saveS();
+}
+// Joining: a learner on this device with the same name as one in the cloud becomes that learner (one 小明, not two).
+function adoptSameNames(local, remote){
+  const out = JSON.parse(JSON.stringify(local));
+  (remote.list || []).forEach(r => {
+    const l = out.list.find(x => x.id !== r.id && x.name === r.name);
+    if (!l) return;
+    out.stats[r.id] = mergeStat(out.stats[l.id], (remote.stats || {})[r.id]);
+    out.list = out.list.filter(x => x.id !== l.id).concat({...r}); delete out.stats[l.id];
+    S.players.forEach(p => { if (p.learner === l.id) p.learner = r.id; });
+  });
+  saveS(); return out;
+}
+let syncing = null, syncTimer = null;
+const syncSoon = () => { if (!SY.code) return; clearTimeout(syncTimer); syncTimer = setTimeout(syncNow, 1500); };
+function syncNow(){
+  if (!SY.code) return Promise.resolve();
+  if (syncing) return syncing;
+  ui.syncBusy = true;
+  syncing = (async () => {
+    for (let i = 0; i < 3; i++){
+      const r = await fetch(`${syncUrl()}/${SY.code}`, {cache: 'no-store'});
+      if (r.status === 404){ SY.err = L('这个同步码找不到了。', 'This sync code no longer exists.'); return; }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const remote = await r.json(), merged = mergeLP(LP, remote.data || {});
+      useLP(merged);
+      if (JSON.stringify(merged) === JSON.stringify(mergeLP(remote.data || {}, {}))){ SY.base = remote.updated; break; }   // cloud already up to date
+      const put = await fetch(`${syncUrl()}/${SY.code}?base=${remote.updated}`, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(merged), keepalive: true});
+      if (put.status === 409) continue;   // another device saved just now: merge again
+      if (!put.ok) throw new Error('HTTP ' + put.status);
+      SY.base = (await put.json()).updated; break;
+    }
+    SY.at = Date.now(); SY.err = '';
+  })().catch(e => { SY.err = L('现在同步不了（可能没连上网），下次会再试。', 'Can\'t sync right now (maybe offline); will try again later.'); })
+    .finally(() => { saveSY(); syncing = null; ui.syncBusy = false; if (screen === 'progress') renderProgress(); });
+  return syncing;
+}
+async function syncCreate(){
+  ui.syncBusy = true; if (screen === 'progress') renderProgress();
+  try {
+    const r = await fetch(`${syncUrl()}/new`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(mergeLP(LP, {}))});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json(); SY = {code: j.code, base: j.updated, at: Date.now(), err: ''}; track('sync/create');
+  } catch (e) { SY.err = L('现在建不了同步码（可能没连上网），请稍后再试。', 'Can\'t make a sync code right now (maybe offline). Please try again later.'); }
+  saveSY(); ui.syncBusy = false; render();
+}
+async function syncJoin(){
+  const input = prompt(L('输入另一台设备上的同步码（12 个字母和数字）：', 'Enter the sync code from your other device (12 letters and numbers):'), '');
+  const code = String(input || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!code) return;
+  if (code.length !== 12){ alert(L('同步码是 12 个字母和数字，请再检查一下。', 'A sync code has 12 letters and numbers — please check it.')); return; }
+  ui.syncBusy = true; render();
+  try {
+    const r = await fetch(`${syncUrl()}/${code}`, {cache: 'no-store'});
+    if (r.status === 404){ alert(L('找不到这个同步码，请再检查一下。', 'That sync code wasn\'t found — please check it.')); }
+    else if (!r.ok) throw new Error('HTTP ' + r.status);
+    else {
+      const remote = await r.json();
+      useLP(adoptSameNames(LP, remote.data || {}));
+      SY = {code, base: 0, at: 0, err: ''}; saveSY(); track('sync/join');
+      ui.syncBusy = false; await syncNow();
+      if (LP.list.length){ ui.progId = LP.list[0].id; screen = 'progress'; }
+    }
+  } catch (e) { alert(L('现在连不上（可能没连上网），请稍后再试。', 'Can\'t connect right now (maybe offline). Please try again later.')); }
+  ui.syncBusy = false; drawBoard(); saveS(); render(); window.scrollTo(0, 0);
+}
+function ago(t){
+  const m = Math.round((Date.now() - t) / 60e3);
+  return m < 1 ? L('刚刚', 'just now') : m < 60 ? L(`${m} 分钟前`, `${m} min ago`) : m < 1440 ? L(`${Math.round(m / 60)} 小时前`, `${Math.round(m / 60)} h ago`) : L(`${Math.round(m / 1440)} 天前`, `${Math.round(m / 1440)} days ago`);
+}
+function syncPanel(){
+  if (!SY.code) return `<section class="panel"><h2>☁️ ${L('多台设备同步', 'Sync across devices')}</h2>
+    <p class="note">${L('想在 iPad、手机、电脑上看到同样的进度？在这里建一个同步码，到另一台设备上输入就行。不用注册，只保存学习者的昵称和认字记录。', 'Want the same progress on an iPad, phone and computer? Make a sync code here and enter it on the other device. No sign-up — only learners\' nicknames and reading records are saved.')}</p>
+    ${SY.err ? `<p class="err">${esc(SY.err)}</p>` : ''}
+    <div class="row"><button type="button" class="btn primary" data-act="synccreate" ${ui.syncBusy ? 'disabled' : ''}>☁️ ${L('建同步码', 'Make a sync code')}</button><button type="button" class="btn soft" data-act="syncjoin" ${ui.syncBusy ? 'disabled' : ''}>🔑 ${L('输入同步码', 'Enter a code')}</button></div></section>`;
+  return `<section class="panel"><h2>☁️ ${L('多台设备同步', 'Sync across devices')}</h2>
+    <p class="synccode">${L('同步码', 'Sync code')}：<b>${fmtCode(SY.code)}</b> <button type="button" class="link" data-act="synccopy">📋 ${L('复制', 'Copy')}</button></p>
+    <p class="note">${L('在另一台设备上打开识字蛇形棋，点「输入同步码」输入这个码，进度就一样了。请把同步码记下来：所有设备都没有它，就找不回云端的进度。', 'On another device, open Hanzi Snakes & Ladders and tap "Enter a sync code". Please write the code down: without it on any device, the cloud copy can\'t be found again.')}</p>
+    <p class="note">${ui.syncBusy ? L('正在同步……', 'Syncing…') : SY.err ? esc(SY.err) : SY.at ? L(`上次同步：${ago(SY.at)}`, `Last synced: ${ago(SY.at)}`) : ''}</p>
+    <div class="row"><button type="button" class="btn soft" data-act="syncnow" ${ui.syncBusy ? 'disabled' : ''}>🔄 ${L('现在同步', 'Sync now')}</button><button type="button" class="link" data-act="syncstop">${L('这台设备停止同步', 'Stop syncing on this device')}</button></div></section>`;
 }
 function listSummary(id, chars){
   const st = LP.stats[id]; let m = 0, l = 0, f = 0;
@@ -985,7 +1101,8 @@ function renderSetup(){
       <p class="note">${L('点头像可以换一个喜欢的人物。', 'Tap an avatar to pick your favourite creature.')}${L('<br>📈 会自动记录每个玩家认字的进度。家长或朋友可以点名字下面的标签，改成「不记录」。', '<br>📈 Each player\'s reading progress is tracked automatically. Grown-ups and friends can tap the label under their name and choose "Don\'t track".')}</p>
       ${players}
       ${S.players.length < 6 ? `<button type="button" class="btn soft" data-act="addp">＋ ${L('加一个玩家', 'Add a player')}</button>` : ''}
-      ${LP.list.length ? `<button type="button" class="btn soft progbtn" data-act="progress">📈 ${L('学习进度', 'Progress')}<span>${LP.list.map(l => esc(l.name)).join(' · ')}</span></button>` : ''}
+      ${LP.list.length ? `<button type="button" class="btn soft progbtn" data-act="progress">📈 ${L('学习进度', 'Progress')}<span>${SY.code ? '☁️ ' : ''}${LP.list.map(l => esc(l.name)).join(' · ')}</span></button>` : ''}
+      ${SY.code ? '' : `<button type="button" class="link syncjoin" data-act="syncjoin">☁️ ${L('在别的设备上玩过？输入同步码', 'Played on another device? Enter a sync code')}</button>`}
     </section>
     ${libPanel}
     <section class="panel"><h2>${L('棋盘', 'Board')}</h2>
@@ -1080,7 +1197,8 @@ function renderProgress(){
       <div class="zgrid">${chars.map(c => `<button type="button" class="${cls(c)}" data-act="progz" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div>
     </section>
     ${hard.length ? `<section class="panel"><h2>💪 ${L('常读错，多练练', 'Often missed — keep practising')}</h2><div class="zchips">${hard.map(([c, r]) => `<button type="button" data-act="progz" data-v="${esc(c)}">${esc(c)}<small>${L(`错 ${r.miss} 次`, `${r.miss}× missed`)}</small></button>`).join('')}</div></section>` : ''}
-    <footer class="foot"><p>${L('进度只保存在这台设备的这个浏览器里。', 'Progress is saved only in this browser on this device.')}</p>
+    ${syncPanel()}
+    <footer class="foot"><p>${SY.code ? L('进度保存在这台设备上，也同步到云端（凭同步码访问）。', 'Progress is saved on this device and synced to the cloud (reachable only with the sync code).') : L('进度只保存在这台设备的这个浏览器里。', 'Progress is saved only in this browser on this device.')}</p>
       <div class="row"><button type="button" class="link" data-act="lrename">✏️ ${L('改名字', 'Rename')}</button><button type="button" class="link" data-act="ldelete">🗑️ ${L('删除这个学习者', 'Delete this learner')}</button></div></footer>`;
 }
 
@@ -1219,7 +1337,7 @@ if (STATS_CODE && !LOCAL){
 function track(name){
   try { if (STATS_CODE && !LOCAL && window.goatcounter && window.goatcounter.count) window.goatcounter.count({path: name, title: name, event: true}); } catch (e) {}
 }
-const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v61'].join(' · ');
+const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v63'].join(' · ');
 function openFeedback(){
   track('feedback');
   const ov = document.createElement('div'); ov.className = 'overlay';
@@ -1542,6 +1660,7 @@ async function win(pi){
   drawBoard(); saveS();  // every new game gets fresh characters and freshly placed props, unicorns and doors
   const rows = Object.entries(G.got || {}).map(([id, e]) => [learnerOf(id), e]).filter(([l]) => l);
   if (rows.length && await summaryCard(rows) === 'prog'){ screen = 'progress'; ui.progId = rows[0][0].id; render(); window.scrollTo(0, 0); return; }
+  syncNow();
   track(k === 'again' ? 'win/again' : 'win/home');
   if (k === 'again' && S.board) newGame(S.players, S.board);
   else { screen = 'setup'; render(); window.scrollTo(0, 0); }
@@ -1581,19 +1700,26 @@ document.addEventListener('click', e => {
       ui.openWho = -1; drawBoard(); break;   // a new board that suits who is playing
     }
     case 'progress': ui.progId = (learnerOf(ui.progId) || learnerOf((S.players.find(p => learnerOf(p.learner)) || {}).learner) || LP.list[0] || {}).id || null;
-      screen = 'progress'; render(); window.scrollTo(0, 0); return;
+      screen = 'progress'; render(); window.scrollTo(0, 0); syncNow(); return;
     case 'progback': screen = 'setup'; render(); window.scrollTo(0, 0); return;
+    case 'synccreate': syncCreate(); return;
+    case 'syncjoin': syncJoin(); return;
+    case 'syncnow': syncNow(); renderProgress(); return;
+    case 'synccopy': { try { navigator.clipboard.writeText(fmtCode(SY.code)); toast(L('同步码已复制', 'Sync code copied')); } catch (e) {} return; }
+    case 'syncstop':
+      if (!confirm(L('这台设备不再同步？进度还会留在这台设备上，云端的进度也不会删掉。', 'Stop syncing on this device? Progress stays on this device, and the cloud copy is kept.'))) return;
+      SY = {}; saveSY(); renderProgress(); return;
     case 'proglib': ui.progLib = b.dataset.v; renderProgress(); return;
     case 'progz': { const ch = b.dataset.v; (async () => card({zi: ch, learn: await hintData(ch), text: zStatus(ui.progId, ch), speak: true, autoSay: true, btns: [['ok', 'Okay']]}))(); return; }
     case 'lrename': {
       const l = learnerOf(ui.progId); if (!l) return;
       const v = (prompt(L('新名字：', 'New name:'), l.name) || '').trim().slice(0, 8);
-      if (v){ l.name = v; saveL(); } renderProgress(); return;
+      if (v){ l.name = v; l.t = Date.now(); saveL(); syncSoon(); } renderProgress(); return;
     }
     case 'ldelete': {
       const l = learnerOf(ui.progId); if (!l) return;
       if (!confirm(L(`删除「${l.name}」和 TA 的全部学习进度？删除后不能恢复。`, `Delete "${l.name}" and all of their progress? This can't be undone.`))) return;
-      LP.list = LP.list.filter(x => x.id !== l.id); delete LP.stats[l.id]; saveL();
+      LP.list = LP.list.filter(x => x.id !== l.id); delete LP.stats[l.id]; (LP.gone || (LP.gone = {}))[l.id] = Date.now(); saveL(); syncSoon();
       S.players.forEach(p => { if (p.learner === l.id) p.learner = null; }); saveS();
       ui.progId = (LP.list[0] || {}).id || null; screen = LP.list.length ? 'progress' : 'setup'; render(); window.scrollTo(0, 0); return;
     }
@@ -1676,4 +1802,6 @@ function render(){
   else { screen = 'setup'; renderSetup(); const pb = document.getElementById('pbox'); if (pb) pb.scrollTop = pb.scrollHeight; }
 }
 render();
+if (SY.code) setTimeout(syncNow, 800);
+document.addEventListener('visibilitychange', () => { if (SY.code && document.visibilityState === 'hidden') syncNow(); else if (SY.code && document.visibilityState === 'visible' && Date.now() - (SY.at || 0) > 60e3) syncNow(); });
 })();
