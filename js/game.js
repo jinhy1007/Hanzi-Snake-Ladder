@@ -486,20 +486,42 @@ function listSummary(id, chars){
   chars.forEach(c => { const r = st && st.chars[c]; if (r){ if (r.m){ m++; if (r.f) f++; } else l++; } });
   return {m, l, f, n: chars.length - m - l, total: chars.length};
 }
-// Characters for a new board: mostly ones the learners at the table haven't mastered yet, plus mastered ones whose
-// review is due (most overdue first, up to REVIEW_SHARE of the board). If the list runs out of unmastered characters,
-// the board is filled with the mastered ones due soonest. Without learners: a random pick, as before.
-function pickChars(lib, n){
-  const ids = [...new Set(S.players.map(p => p.learner).filter(learnerOf))];
-  if (!ids.length) return shuffleArr(lib.slice()).slice(0, n);
+// Characters for a new board. Only tracked seats count ("不记录" seats — grown-ups, visiting friends — don't).
+// One tracked player: mostly characters they haven't mastered, plus their due reviews (up to REVIEW_SHARE).
+// Several: the board is shared out evenly, each part chosen the same way for that player; a tracked player without a
+// profile yet gets a random part. Parts that run short are filled from the others, then with mastered characters
+// (soonest review first, fully learned last). Nobody tracked: a random pick.
+function wantedFor(ids, lib, k, taken){   // unmastered + due reviews for these learners, no filler
+  const avail = lib.filter(c => !taken.has(c)), now = Date.now();
+  if (!ids.length) return shuffleArr(avail).slice(0, k);
   const done = c => ids.every(id => isMastered(id, c)), full = c => ids.every(id => isFull(id, c));
   const due = c => Math.min(...ids.map(id => isFull(id, c) ? Infinity : LP.stats[id].chars[c].due || 0));
-  const fresh = shuffleArr(lib.filter(c => !done(c))), now = Date.now();
-  // mastered but still in review (soonest due first), then fully learned ones as the very last filler
-  const old = lib.filter(c => done(c) && !full(c)).sort((a, b) => due(a) - due(b)).concat(shuffleArr(lib.filter(full)));
-  const nDue = old.filter(c => due(c) <= now).length;
-  const nOld = Math.min(old.length, Math.max(n - fresh.length, Math.min(nDue, Math.round(n * REVIEW_SHARE))));
-  return shuffleArr(fresh.slice(0, n - nOld).concat(old.slice(0, nOld)));
+  const fresh = shuffleArr(avail.filter(c => !done(c)));
+  const dueNow = avail.filter(c => done(c) && !full(c) && due(c) <= now).sort((a, b) => due(a) - due(b));
+  const f = fresh.slice(0, k - Math.min(dueNow.length, Math.round(k * REVIEW_SHARE)));
+  return f.concat(dueNow.slice(0, k - f.length));
+}
+function fillerFor(ids, lib, taken){   // mastered characters: soonest review first, fully learned last
+  const avail = lib.filter(c => !taken.has(c));
+  if (!ids.length) return shuffleArr(avail);
+  const full = c => ids.every(id => isFull(id, c));
+  const due = c => Math.min(...ids.map(id => isFull(id, c) ? Infinity : LP.stats[id].chars[c].due || 0));
+  return avail.filter(c => !full(c)).sort((a, b) => due(a) - due(b)).concat(shuffleArr(avail.filter(full)));
+}
+function pickChars(lib, n){
+  const seats = S.players.filter(p => !p.noTrack);
+  const ids = [...new Set(seats.map(p => p.learner).filter(learnerOf))];
+  const groups = shuffleArr(ids.map(id => [id]).concat(seats.filter(p => !learnerOf(p.learner)).map(() => [])));
+  const taken = new Set(), out = [];
+  const add = cs => cs.forEach(c => { if (out.length < n && !taken.has(c)){ taken.add(c); out.push(c); } });
+  if (groups.length <= 1) add(wantedFor(ids, lib, n, taken));
+  else {
+    const per = Math.floor(n / groups.length); let extra = n - per * groups.length;
+    groups.forEach(g => add(wantedFor(g, lib, per + (extra-- > 0 ? 1 : 0), taken)));
+    if (out.length < n) add(wantedFor(ids, lib, n - out.length, taken));
+  }
+  if (out.length < n) add(fillerFor(ids, lib, taken));
+  return shuffleArr(out);
 }
 if (S.ver !== SETTINGS_VER){ S.counts = defaultCounts(S.len); S.ver = SETTINGS_VER; S.board = null; }
 if (!S.board || !Array.isArray(S.board.cells)) { drawBoard(); }
@@ -1098,7 +1120,8 @@ function renderSetup(){
       <span class="topbtns"><button type="button" class="icon-btn" data-act="feedback" aria-label="${L('意见反馈', 'Feedback')}" title="${L('意见反馈', 'Feedback')}">💬</button>${langBtn()}<button type="button" class="icon-btn" data-act="mute" aria-label="${L('声音开关', 'Sound on/off')}">${S.mute ? '🔇' : '🔊'}</button></span></header>
     ${G && G.active ? `<button type="button" class="btn primary wide" data-act="resume">▶ ${L('继续上一局', 'Continue last game')}</button>` : ''}
     <section class="panel"><h2>${L('谁来玩？', 'Who\'s playing?')}</h2>
-      <p class="note">${L('点头像可以换一个喜欢的人物。', 'Tap an avatar to pick your favourite creature.')}${L('<br>📈 会自动记录每个玩家认字的进度。家长或朋友可以点名字下面的标签，改成「不记录」。', '<br>📈 Each player\'s reading progress is tracked automatically. Grown-ups and friends can tap the label under their name and choose "Don\'t track".')}</p>
+      <p class="note">${L('点头像可以换一个喜欢的人物。', 'Tap an avatar to pick your favourite creature.')}${L('<br>📈 会自动记录每个玩家认字的进度。家长或朋友可以点名字下面的标签，改成「不记录」。<br>🎲 棋盘上的字按「记录」的玩家来出：一个人记录，就按 TA 的进度；几个人记录，就平分棋盘，每人一份自己还没掌握的字。朋友来家里玩时，可以把朋友的座位改成「不记录」。',
+        '<br>📈 Each player\'s reading progress is tracked automatically. Grown-ups and friends can tap the label under their name and choose "Don\'t track".<br>🎲 The board\'s characters follow the tracked players: one tracked player, their progress; several, the board is shared out so each gets characters they haven\'t mastered yet. When a friend visits, set the friend\'s seat to "Don\'t track".')}</p>
       ${players}
       ${S.players.length < 6 ? `<button type="button" class="btn soft" data-act="addp">＋ ${L('加一个玩家', 'Add a player')}</button>` : ''}
       ${LP.list.length ? `<button type="button" class="btn soft progbtn" data-act="progress">📈 ${L('学习进度', 'Progress')}<span>${SY.code ? '☁️ ' : ''}${LP.list.map(l => esc(l.name)).join(' · ')}</span></button>` : ''}
@@ -1337,7 +1360,7 @@ if (STATS_CODE && !LOCAL){
 function track(name){
   try { if (STATS_CODE && !LOCAL && window.goatcounter && window.goatcounter.count) window.goatcounter.count({path: name, title: name, event: true}); } catch (e) {}
 }
-const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v63'].join(' · ');
+const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v64'].join(' · ');
 function openFeedback(){
   track('feedback');
   const ov = document.createElement('div'); ov.className = 'overlay';
