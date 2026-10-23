@@ -2,7 +2,7 @@
 """汉字卡用的楷体：文鼎 PL 中楷 CN（AR PL UKai CN，Arphic Public License），所有设备都显示一样的字体。
 
 原字体太大（十几 MB），只留游戏要用的字，分两个文件：
-  fonts/ukai-core.woff2  内置 1000 字和它们的组词里出现的字（几乎每局都用到）
+  fonts/ukai-core.woff2  内置 1000 字、它们的组词，以及复习卡组词和造句里出现的字（几乎每局都用到）
   fonts/ukai-more.woff2  GB2312 一级常用字里剩下的字（上传自己的字库时才可能用到）
 CSS 里用 unicode-range，浏览器只下载页面上真的用到的那个文件。不在里面的生僻字用设备自带字体。
 原字体：art-src/fonts/ukai-deb/…/ukai.ttc（Debian fonts-arphic-ukai 包）。
@@ -32,6 +32,9 @@ def main():
     game = open(os.path.join(ROOT, 'js', 'game.js'), encoding='utf-8').read()
     han = lambda t: {c for c in t if '一' <= c <= '鿿'}
     core = han(hints) | han(re.search(r"const LIB300 = '([^']*)'", game).group(1))
+    # 复习卡（js/study.js）里的组词和造句也用楷体；字义用普通字体，不算
+    study = json.loads('{' + open(os.path.join(ROOT, 'js', 'study.js'), encoding='utf-8').read().split('const STUDY = {', 1)[1].rsplit('};', 1)[0] + '}')
+    for v in study.values(): core |= han(' '.join(w for w, _ in v[2]) + v[3])
     gb1 = set()
     for hi in range(0xB0, 0xD8):
         for lo in range(0xA1, 0xFF):
