@@ -728,16 +728,21 @@ const canSpeak = 'speechSynthesis' in window && typeof SpeechSynthesisUtterance 
 // Characters without a recording (e.g. from an uploaded list) fall back to the device's speech voice.
 const hasVoice = ch => typeof HINTS !== 'undefined' && !!HINTS[ch];   // every built-in character (all 1000) has a girl-voice recording
 const voiceBufs = {}; let voiceSrc = null;
-function loadVoice(ch){
-  if (!voiceBufs[ch]) voiceBufs[ch] = fetch(`sounds/zi/${ch.codePointAt(0).toString(16)}.m4a`).then(r => { if (!r.ok) throw 0; return r.arrayBuffer(); })
+// The review cards' words and sentences have girl-voice recordings too (tools/voices_study.py):
+// sounds/ci/<code points joined by _>.m4a for a word, sounds/ju/<code point of the character>.m4a for its sentence.
+const clipName = t => [...t].map(c => c.codePointAt(0).toString(16)).join('_');
+function loadClip(url){
+  if (!voiceBufs[url]) voiceBufs[url] = fetch(url).then(r => { if (!r.ok) throw 0; return r.arrayBuffer(); })
     .then(b => new Promise((res, rej) => AC.decodeAudioData(b, res, rej))).catch(() => null);
-  return voiceBufs[ch];
+  return voiceBufs[url];
 }
-function say(t){
+const loadVoice = ch => loadClip(`sounds/zi/${clipName(ch)}.m4a`);
+function sayClip(t, url){   // play a recording; fall back to the device's speech voice if it's missing
   if (!t) return;
-  if (hasVoice(t) && ac()){
+  if (url && ac()){
     try { if (voiceSrc) voiceSrc.stop(); } catch (e) {}
-    loadVoice(t).then(buf => {
+    try { speechSynthesis.cancel(); } catch (e) {}
+    loadClip(url).then(buf => {
       if (!buf){ speak(t); return; }
       const src = AC.createBufferSource(); src.buffer = buf; src.connect(AC.destination); src.start(); voiceSrc = src;
     });
@@ -745,6 +750,7 @@ function say(t){
   }
   speak(t);
 }
+const say = t => sayClip(t, t && hasVoice(t) ? `sounds/zi/${clipName(t)}.m4a` : null);
 function speak(t){
   if (!canSpeak || !t) return;
   try {
@@ -994,7 +1000,7 @@ async function card(o){
       if (o.hintP && e.type === 'click' && (b ? b.dataset.hint : e.target.closest && e.target.closest('[data-flip]'))){ useHint(ov, o, !!(b && b.dataset.hint)); return; }
       if (!b || b.disabled) return;
       if (b.dataset.say){ if (e.type === 'click') say(o.zi); return; }
-      if (b.dataset.word){ if (e.type === 'click') speak(b.dataset.word); return; }
+      if (b.dataset.word){ if (e.type === 'click') sayClip(b.dataset.word, b.dataset.clip); return; }
       if (b.dataset.mic){ if (e.type === 'click') onMic(); return; }
       if (!b.dataset.k || performance.now() - shownAt < 250) return;
       e.preventDefault();
@@ -1267,10 +1273,11 @@ function rubyHTML(sent, py, ch){
 function studyHTML(ch, d, s, foot){
   const hl = w => esc(w).split(esc(ch)).join(`<b>${esc(ch)}</b>`);
   const words = s ? s[2] : d.w ? [[d.w, d.wpy]] : [];
+  const tap = (s || canSpeak) ? `<small>${L('点一下听', 'tap to hear')}</small>` : '';   // built-in characters have recordings
   return `<div class="study">
     ${s ? `<div class="sblk"><h4>💡 ${L('字义', 'Meaning')}</h4><p class="mean">${esc(EN() ? s[1] : s[0])}</p><p class="mean2">${esc(EN() ? s[0] : s[1])}</p></div>` : ''}
-    ${words.length ? `<div class="sblk"><h4>🧩 ${L('组词', 'Words')}${canSpeak ? `<small>${L('点一下听', 'tap to hear')}</small>` : ''}</h4><div class="words">${words.map(([w, p]) => `<button type="button" class="word" data-word="${esc(w)}"><span class="wz">${hl(w)}</span><span class="wpy">${esc(p || '')}</span></button>`).join('')}</div></div>` : ''}
-    ${s ? `<div class="sblk"><h4>✏️ ${L('造句', 'Sentence')}${canSpeak ? `<small>${L('点一下听', 'tap to hear')}</small>` : ''}</h4><button type="button" class="sent" data-word="${esc(s[3])}">${rubyHTML(s[3], s[4], ch)}</button><p class="mean2">${esc(s[5])}</p></div>`
+    ${words.length ? `<div class="sblk"><h4>🧩 ${L('组词', 'Words')}${tap}</h4><div class="words">${words.map(([w, p]) => `<button type="button" class="word" data-word="${esc(w)}"${s ? ` data-clip="sounds/ci/${clipName(w)}.m4a"` : ''}><span class="wz">${hl(w)}</span><span class="wpy">${esc(p || '')}</span></button>`).join('')}</div></div>` : ''}
+    ${s ? `<div class="sblk"><h4>✏️ ${L('造句', 'Sentence')}${tap}</h4><button type="button" class="sent" data-word="${esc(s[3])}" data-clip="sounds/ju/${clipName(ch)}.m4a">${rubyHTML(s[3], s[4], ch)}</button><p class="mean2">${esc(s[5])}</p></div>`
       : `<p class="note">${L('这个字还没有字义和造句。', 'No meaning or example sentence for this character yet.')}</p>`}
     ${foot ? `<p class="sfoot">${esc(foot)}</p>` : ''}</div>`;
 }
@@ -1447,7 +1454,7 @@ if (STATS_CODE && !LOCAL){
 function track(name){
   try { if (STATS_CODE && !LOCAL && window.goatcounter && window.goatcounter.count) window.goatcounter.count({path: name, title: name, event: true}); } catch (e) {}
 }
-const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v65'].join(' · ');
+const feedbackInfo = () => [S.lang, S.lib, S.len, /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'computer', 'v66'].join(' · ');
 function openFeedback(){
   track('feedback');
   const ov = document.createElement('div'); ov.className = 'overlay';
