@@ -764,7 +764,7 @@ function speak(t){
   } catch (e) {}
 }
 
-/* ---------- listening: the game hears the player read (Web Speech API; tested in lab/voice-test.html) ---------- */
+/* ---------- listening: the game hears the player read (Web Speech API; tested in lab/voice-test.html, since removed) ---------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const canListen = (!!SR || !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) && window.isSecureContext;   // Azure only needs the microphone
 let voiceBroken = false;   // voiceBroken: mic or recognition failed this session → parents judge instead
@@ -842,7 +842,7 @@ async function azToken(){
 }
 // Resolves {v, alts, score}, {err}, or {fallback: true} when Azure isn't available (then the browser recognizer is used).
 // Continuous listening, stopped at the first result: Azure's "stop after silence" settings are rejected together with
-// pronunciation assessment (error 1007), and single-shot listening took 6–10 s (tested in lab/azure-test.html).
+// pronunciation assessment (error 1007), and single-shot listening took 6–10 s (tested in lab/azure-test.html, since removed).
 // Azure is told which character to expect, so the text it returns always leans toward that character ("吗" even
 // when 块 was read). With miscue detection on, it flags wrong readings instead (lab/azure-test.html, variant M):
 // correct readings came back ErrorType None (accuracy 68–74), wrong ones Mispronunciation (accuracy 10–59).

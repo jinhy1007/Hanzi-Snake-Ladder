@@ -4,15 +4,26 @@
 //   POST /sync/new         store a family's learner progress, get a new family sync code back
 //   GET  /sync/<code>      read it
 //   PUT  /sync/<code>?base=<updated>   replace it (only if nobody else saved since <updated>; otherwise 409)
+//   (too many requests from one IP → 429, see LIMITS)
 //
 // Setup (Cloudflare dashboard → Workers & Pages → this Worker → Settings):
 //   Variables and Secrets:  AZURE_KEY (Secret) = KEY 1 of the Azure Speech resource; AZURE_REGION (Text) = e.g. westus2
 //   Bindings:               D1 database, variable name DB → the "hanzi-sync" database (the table is created automatically)
 //
 // The sync code is the only key to a family's data: nicknames and per-character reading counts, nothing personal.
+//
+// Rate limits: the Origin check only stops other websites in a browser; a script can send any Origin. So each IP may
+// only make so many requests per window, and some actions also have a daily cap for everyone together (counted in the
+// same D1 database, table "hits"). Over the limit → 429. The game then falls back (browser speech, or syncs later).
 const ALLOWED = ['https://jinhy1007.github.io', 'http://127.0.0.1:8765', 'http://localhost:8765'];
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';   // no 0/O, 1/I/L: easy to read out and type
 const MAX_BYTES = 400000;
+//          [per IP, window in seconds, daily cap for everyone (0 = none)]
+const LIMITS = {
+  token: [20, 600, 3000],     // the game keeps a token for 8 minutes, so a player needs only a few an hour
+  create: [5, 3600, 300],     // new family sync codes
+  sync: [300, 600, 0],        // reading and saving progress (a game syncs a few times a minute while playing)
+};
 
 export default {
   async fetch(request, env) {
@@ -25,13 +36,34 @@ export default {
     }
     if (!ok) return new Response('Forbidden', { status: 403, headers: cors });
     try {
-      if (url.pathname.startsWith('/sync')) return await sync(request, env, url, cors);
+      const isSync = url.pathname.startsWith('/sync');
+      const kind = !isSync ? 'token' : request.method === 'POST' ? 'create' : 'sync';
+      if (await overLimit(env, kind, request.headers.get('CF-Connecting-IP') || 'unknown')) {
+        return json({ error: 'too many requests' }, 429, { ...cors, 'Retry-After': '600' });
+      }
+      if (isSync) return await sync(request, env, url, cors);
       return await speechToken(env, cors);
     } catch (e) {
-      return json({ error: String(e && e.message || e) }, 500, cors);
+      console.log('error', e && e.stack || e);
+      return json({ error: 'server error' }, 500, cors);
     }
   },
 };
+
+// Counts this request; true if the IP (or everyone, for the daily cap) is over the limit.
+async function overLimit(env, kind, ip) {
+  if (!env.DB) return false;
+  const [perIp, win, daily] = LIMITS[kind], now = Date.now(), sec = Math.floor(now / 1000);
+  await env.DB.prepare('CREATE TABLE IF NOT EXISTS hits (k TEXT PRIMARY KEY, n INTEGER NOT NULL, exp INTEGER NOT NULL)').run();
+  if (Math.random() < 0.01) await env.DB.prepare('DELETE FROM hits WHERE exp < ?').bind(now).run();
+  const bump = (k, exp) => env.DB.prepare('INSERT INTO hits (k, n, exp) VALUES (?, 1, ?) ON CONFLICT(k) DO UPDATE SET n = n + 1 RETURNING n')
+    .bind(k, exp).first('n');
+  const bucket = Math.floor(sec / win);
+  if (await bump(`${kind}:${ip}:${bucket}`, (bucket + 1) * win * 1000) > perIp) return true;
+  if (!daily) return false;
+  const day = Math.floor(sec / 86400);
+  return await bump(`${kind}:all:${day}`, (day + 1) * 86400000) > daily;
+}
 
 function json(obj, status, cors) {
   return new Response(JSON.stringify(obj), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
